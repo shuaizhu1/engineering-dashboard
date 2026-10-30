@@ -4,6 +4,7 @@ import type { EChartEventHandlers } from '../charts/EChart'
 import { TREND_BRUSH_ID, buildParetoOption, buildVibrationTrendOption } from '../charts/dashboardOptions'
 import { DateRangeFilter } from '../components/DateRangeFilter'
 import { FilterSelect } from '../components/FilterSelect'
+import { ViewTabs } from '../components/ViewTabs'
 import { EVENT_TYPES, FLIGHT_LABELS, type EventType } from '../data/types'
 import { eventTypePareto } from '../filters/aggregate'
 import {
@@ -15,9 +16,10 @@ import {
   hasActiveFilters,
   toggleValue,
 } from '../filters/filters'
-import { useChartColors } from '../hooks/useChartColors'
+import { useChartTheme } from '../hooks/useChartTheme'
 import { useFilters } from '../hooks/useFilters'
 import { siftMode } from '../modes/sift'
+import { ParetoTable, TrendTable } from './chart-tables'
 import { FlightGrid } from './flight-grid'
 import { useSiftData } from './root-data'
 
@@ -36,22 +38,40 @@ interface ChartCardProps {
   title: string
   hint?: string
   action?: ReactNode
+  /** The chart's data as a table, offered through a Chart/Table switch. */
+  table: ReactNode
   children: ReactNode
 }
 
-function ChartCard({ title, hint, action, children }: ChartCardProps) {
+function ChartCard({ title, hint, action, table, children }: ChartCardProps) {
   return (
     <section className="rounded-lg border border-border bg-surface p-4">
-      <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold">
-          {title}
-          {hint && <span className="ml-2 font-normal text-muted">{hint}</span>}
-        </h2>
-        {action}
-      </div>
-      <Suspense fallback={<div className="h-[280px] animate-pulse rounded bg-border/40" role="status" aria-label="Loading chart" />}>
-        {children}
-      </Suspense>
+      <ViewTabs
+        label={`${title} view`}
+        heading={
+          <h2 className="text-sm font-semibold">
+            {title}
+            {hint && <span className="ml-2 font-normal text-muted">{hint}</span>}
+          </h2>
+        }
+        action={action}
+        views={[
+          {
+            value: 'chart',
+            label: 'Chart',
+            content: (
+              <Suspense
+                fallback={
+                  <div className="h-[280px] animate-pulse rounded bg-border/40" role="status" aria-label="Loading chart" />
+                }
+              >
+                {children}
+              </Suspense>
+            ),
+          },
+          { value: 'table', label: 'Table', content: table },
+        ]}
+      />
     </section>
   )
 }
@@ -59,7 +79,7 @@ function ChartCard({ title, hint, action, children }: ChartCardProps) {
 export function Dashboard() {
   const { flights, events, syntheticCount } = useSiftData()
   const [filters, setFilters] = useFilters()
-  const colors = useChartColors()
+  const { theme: chartTheme, colors } = useChartTheme()
 
   // Load DuckDB-WASM and the telemetry view while the user looks at the dashboard,
   // so opening a flight doesn't wait for the WebAssembly download.
@@ -101,15 +121,16 @@ export function Dashboard() {
       }),
     [trendFlights, filters.from, filters.to, colors],
   )
+  const paretoRows = useMemo(() => eventTypePareto(paretoEvents, EVENT_TYPES), [paretoEvents])
   const paretoOption = useMemo(
     () =>
-      buildParetoOption(eventTypePareto(paretoEvents, EVENT_TYPES), {
+      buildParetoOption(paretoRows, {
         names: siftMode.eventTypes,
         noun: 'events',
         selected: filters.eventTypes,
         colors,
       }),
-    [paretoEvents, filters.eventTypes, colors],
+    [paretoRows, filters.eventTypes, colors],
   )
 
   const trendEvents = useMemo<EChartEventHandlers>(
@@ -124,6 +145,8 @@ export function Dashboard() {
     }),
     [filters, setFilters],
   )
+  const toggleEventType = (type: EventType) =>
+    setFilters({ ...filters, eventTypes: toggleValue(filters.eventTypes, type, EVENT_TYPES) })
   const paretoClickEvents = useMemo<EChartEventHandlers>(
     () => ({
       click: (params) => {
@@ -137,6 +160,7 @@ export function Dashboard() {
 
   return (
     <div className="space-y-4">
+      <title>{`${siftMode.title} · Engineering Data Explorer`}</title>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-xl font-semibold">{siftMode.title}</h1>
         <p className="text-sm text-muted" aria-live="polite">
@@ -188,7 +212,8 @@ export function Dashboard() {
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard
           title="Max vibration per flight"
-          hint="Drag to select dates · scroll to zoom"
+          hint="Drag to select dates"
+          table={<TrendTable flights={trendFlights} />}
           action={
             (filters.from || filters.to) && (
               <button
@@ -202,6 +227,7 @@ export function Dashboard() {
           }
         >
           <EChart
+            theme={chartTheme}
             option={trendOption}
             onEvents={trendEvents}
             onAfterSetOption={enableDateBrush}
@@ -211,6 +237,7 @@ export function Dashboard() {
         <ChartCard
           title="Events by type"
           hint="Click a bar to filter"
+          table={<ParetoTable rows={paretoRows} selected={filters.eventTypes} onToggle={toggleEventType} />}
           action={
             filters.eventTypes.length > 0 && (
               <button
@@ -223,7 +250,7 @@ export function Dashboard() {
             )
           }
         >
-          <EChart option={paretoOption} onEvents={paretoClickEvents} style={{ height: 280 }} />
+          <EChart theme={chartTheme} option={paretoOption} onEvents={paretoClickEvents} style={{ height: 280 }} />
         </ChartCard>
       </div>
 

@@ -34,6 +34,7 @@ describe('buildVibrationTrendOption', () => {
   const option = buildVibrationTrendOption(flights, trendConfig) as {
     aria: { description: string }
     series: { name: string; data: [number, number, string][]; markLine?: { data: { yAxis: number }[] } }[]
+    dataZoom: { startValue?: number }[]
   }
 
   it('creates one series per label present, sorted by start time', () => {
@@ -71,9 +72,28 @@ describe('buildVibrationTrendOption', () => {
     expect(option.series[0]).not.toHaveProperty('markArea.data')
   })
 
-  it('handles no flights', () => {
-    const empty = buildVibrationTrendOption([], trendConfig) as { series: unknown[] }
+  it('handles no flights with a message on the chart', () => {
+    const empty = buildVibrationTrendOption([], trendConfig) as { series: unknown[]; graphic: { style: { text: string } }[] }
     expect(empty.series).toEqual([])
+    expect(empty.graphic[0].style.text).toBe('No flights with a start time match these filters')
+  })
+
+  it('uses a log axis and clamps zero so every flight can be placed', () => {
+    const zero = buildVibrationTrendOption([flight('z', 'good', '2026-10-01T00:00:00Z', 0)], trendConfig) as {
+      yAxis: { type: string }
+      series: { data: [number, number, string][] }[]
+    }
+    expect(zero.yAxis.type).toBe('log')
+    expect(zero.series[0].data[0][1]).toBeGreaterThan(0)
+  })
+
+  it('opens on the most recent year when flights span several years', () => {
+    const spread = buildVibrationTrendOption(
+      [flight('old', 'good', '2021-06-01T00:00:00Z', 1), flight('new', 'good', '2026-10-01T00:00:00Z', 1)],
+      trendConfig,
+    ) as { dataZoom: { startValue?: number }[] }
+    expect(spread.dataZoom[0].startValue).toBe(Date.parse('2026-10-01T00:00:00Z') - 365 * 24 * 60 * 60 * 1000)
+    expect(option.dataZoom[0].startValue).toBeUndefined()
   })
 })
 
@@ -115,6 +135,15 @@ describe('buildParetoOption', () => {
     const color = filtered.series[0].itemStyle.color
     expect(color({ data: ['battery_sag'] })).not.toBe(color({ data: ['vibration_high'] }))
     expect(filtered.aria.description).toContain('Filtered to Battery sag.')
+  })
+
+  it('says so on the chart when there are no events', () => {
+    const empty = buildParetoOption(
+      rows.map((r) => ({ ...r, count: 0, cumulativePct: 0 })),
+      { names: siftMode.eventTypes, noun: 'events' },
+    ) as { graphic: { style: { text: string } }[] }
+    expect(empty.graphic[0].style.text).toBe('No events match these filters')
+    expect((option as unknown as { graphic: unknown[] }).graphic).toEqual([])
   })
 
   it('lists the counts for screen readers', () => {

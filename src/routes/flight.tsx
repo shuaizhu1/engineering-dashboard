@@ -3,6 +3,7 @@ import {
   Link,
   useLoaderData,
   useParams,
+  useRouteError,
   useSearchParams,
   type LoaderFunctionArgs,
   type ShouldRevalidateFunctionArgs,
@@ -13,8 +14,9 @@ import { isSynthetic, shortFlightId, sourceFlightId } from '../data/stress'
 import type { Flight, FlightEvent } from '../data/types'
 import { filterFlights, parseFilters } from '../filters/filters'
 import { neighbors } from '../filters/navigation'
-import { useChartColors } from '../hooks/useChartColors'
+import { useChartTheme } from '../hooks/useChartTheme'
 import { siftMode } from '../modes/sift'
+import { ErrorPanel } from './root'
 import { useSiftData } from './root-data'
 
 const EChart = lazy(() => import('../charts/EChart'))
@@ -46,7 +48,7 @@ export function Component() {
   const [searchParams, setSearchParams] = useSearchParams()
   const telemetry = useLoaderData<typeof loader>()
   const { flights, events } = useSiftData()
-  const colors = useChartColors()
+  const { theme: chartTheme, colors } = useChartTheme()
 
   // Dashboard filters ride along in the query string; without the focus they form the "results" link.
   const listSearch = useMemo(() => {
@@ -95,6 +97,7 @@ export function Component() {
   if (!flight || !telemetry || !option) {
     return (
       <div className="space-y-2">
+        <title>Flight not found · Engineering Data Explorer</title>
         <h1 className="text-xl font-semibold">Flight not found</h1>
         <p className="text-sm text-muted">There is no flight with the id “{flightId}”.</p>
         <Link to={{ pathname: '/', search: listSearch }}>Back to results</Link>
@@ -107,6 +110,7 @@ export function Component() {
 
   return (
     <div className="space-y-4">
+      <title>{`Flight ${shortFlightId(flight.flightId)} · Engineering Data Explorer`}</title>
       <nav aria-label="Flight navigation" className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <Link to={{ pathname: '/', search: listSearch }}>← Back to results</Link>
         <FlightPager
@@ -171,7 +175,7 @@ export function Component() {
               />
             }
           >
-            <EChart option={option} style={{ height: chartHeight }} />
+            <EChart theme={chartTheme} option={option} style={{ height: chartHeight }} />
           </Suspense>
           {missing.length > 0 && (
             <p className="mt-2 text-xs text-muted">
@@ -183,6 +187,17 @@ export function Component() {
         <EventList events={flightEvents} focus={focus} onSelect={setFocus} />
       </div>
     </div>
+  )
+}
+
+/** Shown when the telemetry for a flight fails to load (e.g. DuckDB-WASM or the Parquet fetch). */
+export function ErrorBoundary() {
+  const error = useRouteError()
+  return (
+    <>
+      <title>Error · Engineering Data Explorer</title>
+      <ErrorPanel title="Telemetry for this flight couldn't be loaded" error={error} />
+    </>
   )
 }
 

@@ -33,7 +33,7 @@ const config = { panels, eventNames: siftMode.eventTypes, seriesColors: ['#111',
 
 type Option = {
   aria: { description: string }
-  legend?: { data: string[] }
+  legend: { data: string[]; top: number }[]
   dataset: { dimensions: string[]; source: (number | null)[][] }
   grid: { top: number }[]
   dataZoom: { xAxisIndex: number[]; startValue?: number; endValue?: number }[]
@@ -85,8 +85,9 @@ describe('buildSyncedChannelsOption', () => {
     expect(shades).toEqual([[100], [200], [], null])
   })
 
-  it('adds a legend only for panels with several channels', () => {
-    expect(option.legend?.data).toEqual(['Roll', 'Pitch'])
+  it('adds a legend above each panel with several channels', () => {
+    expect(option.legend.map((l) => l.data)).toEqual([['Roll', 'Pitch']])
+    expect(option.legend[0].top).toBeLessThan(option.grid[2].top)
   })
 
   it('opens zoomed to the focused event and shades it on every panel', () => {

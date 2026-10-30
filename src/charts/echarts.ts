@@ -5,6 +5,7 @@ import {
   BrushComponent,
   DataZoomComponent,
   DatasetComponent,
+  GraphicComponent,
   GridComponent,
   LegendComponent,
   MarkAreaComponent,
@@ -13,6 +14,7 @@ import {
 } from 'echarts/components'
 import * as echarts from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
+import { registerChartThemes } from './chartTheme'
 
 echarts.use([
   BarChart,
@@ -22,6 +24,7 @@ echarts.use([
   BrushComponent,
   DataZoomComponent,
   DatasetComponent,
+  GraphicComponent,
   GridComponent,
   LegendComponent,
   MarkAreaComponent,
@@ -29,5 +32,7 @@ echarts.use([
   TooltipComponent,
   CanvasRenderer,
 ])
+
+registerChartThemes(echarts)
 
 export { echarts }

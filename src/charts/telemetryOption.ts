@@ -1,7 +1,7 @@
 import type { EChartsCoreOption } from 'echarts/core'
 import type { EventType, FlightEvent, FlightTelemetry, TelemetryChannel } from '../data/types'
 import { focusWindow } from '../filters/navigation'
-import { DEFAULT_CHART_COLORS, axisStyle, type ChartColors } from './chartTheme'
+import { DEFAULT_CHART_COLORS, type ChartColors } from './chartTheme'
 
 /** One stacked plot in the detail view: one or more channels sharing a y axis. */
 export interface ChannelPanel {
@@ -83,7 +83,6 @@ export function buildSyncedChannelsOption(
     ...(focus ? [[{ xAxis: focus.startS, itemStyle: { color: colors.accent, opacity: 0.22 } }, { xAxis: focus.endS }]] : []),
   ]
 
-  const legendNames = panels.filter((p) => p.series.length > 1).flatMap((p) => p.series.map((s) => s.name))
   const duration = Math.round(tEnd - tStart)
 
   return {
@@ -97,9 +96,20 @@ export function buildSyncedChannelsOption(
           ? ` Zoomed to ${config.eventNames[focus.type]} at ${focus.startS.toFixed(1)}–${focus.endS.toFixed(1)} s.`
           : ''),
     },
-    legend: legendNames.length
-      ? { data: legendNames, top: 0, right: 16, itemWidth: 14, textStyle: { color: colors.text } }
-      : undefined,
+    // One legend per multi-channel panel, at its top right, so colors are read within that panel.
+    legend: panels.flatMap((p, i) =>
+      p.series.length > 1
+        ? [
+            {
+              data: p.series.map((s) => s.name),
+              top: TOP + i * (PANEL_HEIGHT + PANEL_GAP) - 22,
+              right: 24,
+              itemWidth: 14,
+              itemHeight: 8,
+            },
+          ]
+        : [],
+    ),
     tooltip: { trigger: 'axis', axisPointer: { type: 'line' } },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     dataset: {
@@ -121,10 +131,8 @@ export function buildSyncedChannelsOption(
       // Whole seconds at the ends so the axis labels stay readable.
       min: Math.floor(tStart),
       max: Math.ceil(tEnd),
-      ...axisStyle(colors),
       splitLine: { show: false },
       axisLabel: {
-        color: colors.muted,
         show: i === panels.length - 1,
         formatter: (value: number) => `${Math.round(value)} s`,
       },
@@ -137,7 +145,6 @@ export function buildSyncedChannelsOption(
       nameGap: 8,
       scale: true,
       splitNumber: 3,
-      ...axisStyle(colors),
       nameTextStyle: { color: colors.text, align: 'left', fontWeight: 600 },
     })),
     dataZoom: [
@@ -157,7 +164,6 @@ export function buildSyncedChannelsOption(
         filterMode: 'none',
         height: 16,
         bottom: 12,
-        textStyle: { color: colors.muted },
         ...(window ? { startValue: window[0], endValue: window[1] } : {}),
       },
     ],

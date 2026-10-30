@@ -2,7 +2,7 @@ import type { EChartsCoreOption } from 'echarts/core'
 import type { Flight, FlightLabel } from '../data/types'
 import { shortFlightId } from '../data/stress'
 import type { ParetoRow } from '../filters/aggregate'
-import { DEFAULT_CHART_COLORS, axisStyle, type ChartColors } from './chartTheme'
+import { DEFAULT_CHART_COLORS, type ChartColors } from './chartTheme'
 
 export interface TrendConfig {
   labels: Record<FlightLabel, string>
@@ -17,10 +17,28 @@ export interface TrendConfig {
 export const TREND_BRUSH_ID = 'dateBrush'
 
 const DATE_ONLY = (time: number) => new Date(time).toISOString().slice(0, 10)
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** Centered message drawn on a chart that has nothing to show. */
+export function emptyMessage(text: string, color: string) {
+  return {
+    type: 'text',
+    left: 'center',
+    top: 'middle',
+    silent: true,
+    style: { text, fill: color, fontSize: 14 },
+  }
+}
+
+/** Show the most recent year first when the data spans much longer; the slider reaches the rest. */
+const INITIAL_WINDOW_MS = 365 * DAY_MS
+const LONG_SPAN_MS = 2 * INITIAL_WINDOW_MS
 
 /**
  * Max vibration per flight against its start time, one scatter series per label.
  * Dragging across the chart (brush) selects a date range; the wheel zooms the time axis.
+ * The y axis is logarithmic: vibration spans orders of magnitude, and a linear axis lets one
+ * crash-like flight flatten all the others.
  */
 export function buildVibrationTrendOption(flights: Flight[], config: TrendConfig): EChartsCoreOption {
   const colors = config.colors ?? DEFAULT_CHART_COLORS
@@ -39,6 +57,10 @@ export function buildVibrationTrendOption(flights: Flight[], config: TrendConfig
         { xAxis: range.end ?? dated[dated.length - 1].startedAt! },
       ]
     : null
+  const newest = dated.length ? dated[dated.length - 1].startedAt! : 0
+  const window =
+    dated.length && newest - dated[0].startedAt! > LONG_SPAN_MS ? { startValue: newest - INITIAL_WINDOW_MS } : {}
+
   const rangeText = hasRange
     ? ` Selected range ${range.start === null ? 'start' : DATE_ONLY(range.start)} to ${range.end === null ? 'end' : DATE_ONLY(range.end - 1)}.`
     : ''
@@ -52,7 +74,7 @@ export function buildVibrationTrendOption(flights: Flight[], config: TrendConfig
         (undated ? `; ${undated} flights without a start time are not shown.` : '.') +
         rangeText,
     },
-    grid: { left: 56, right: 24, top: 40, bottom: 64 },
+    grid: { left: 56, right: 24, top: 56, bottom: 64 },
     brush: {
       id: TREND_BRUSH_ID,
       xAxisIndex: 0,
@@ -62,23 +84,32 @@ export function buildVibrationTrendOption(flights: Flight[], config: TrendConfig
       brushStyle: { color: colors.accent, opacity: 0.15, borderColor: colors.accent, borderWidth: 1 },
     },
     dataZoom: [
-      { type: 'inside', xAxisIndex: 0, zoomOnMouseWheel: true, moveOnMouseMove: false, moveOnMouseWheel: false },
-      { type: 'slider', xAxisIndex: 0, height: 16, bottom: 8, textStyle: { color: colors.muted } },
+      {
+        type: 'inside',
+        xAxisIndex: 0,
+        zoomOnMouseWheel: true,
+        moveOnMouseMove: false,
+        moveOnMouseWheel: false,
+        ...window,
+      },
+      { type: 'slider', xAxisIndex: 0, height: 16, bottom: 8, ...window },
     ],
-    legend: { top: 0, textStyle: { color: colors.text } },
+    graphic: dated.length === 0 ? [emptyMessage('No flights with a start time match these filters', colors.muted)] : [],
+    legend: { top: 0 },
     tooltip: {
       trigger: 'item',
       formatter: (p: { data: [number, number, string]; seriesName: string }) =>
         `${shortFlightId(p.data[2])} · ${p.seriesName}<br/>${new Date(p.data[0]).toISOString().slice(0, 10)} · ${p.data[1].toFixed(1)} m/s²`,
     },
-    xAxis: { type: 'time', ...axisStyle(colors), splitLine: { show: false } },
-    yAxis: { type: 'value', name: 'Max vibration (m/s²)', min: 0, ...axisStyle(colors) },
+    xAxis: { type: 'time', splitLine: { show: false } },
+    yAxis: { type: 'log', name: 'Max vibration (m/s², log scale)', logBase: 10 },
     series: labels.map((label, i) => ({
       type: 'scatter',
       name: config.labels[label],
       symbolSize: 10,
       itemStyle: { color: config.labelColors[label] },
-      data: dated.filter((f) => f.label === label).map((f) => [f.startedAt, f.maxVibMs2, f.flightId]),
+      // A log axis can't place 0; clamp to a floor well below any real reading.
+      data: dated.filter((f) => f.label === label).map((f) => [f.startedAt, Math.max(f.maxVibMs2, 0.01), f.flightId]),
       // One threshold line and one range shade are enough; attach them to the first series.
       markArea: i === 0 && shade ? { silent: true, data: [shade] } : undefined,
       markLine:
@@ -87,7 +118,7 @@ export function buildVibrationTrendOption(flights: Flight[], config: TrendConfig
               silent: true,
               symbol: 'none',
               lineStyle: { color: colors.danger, type: 'dashed' },
-              label: { formatter: `${config.thresholdMs2} m/s²`, color: colors.danger },
+              label: { formatter: `${config.thresholdMs2} m/s²`, color: colors.danger, position: 'insideEndTop' },
               data: [{ yAxis: config.thresholdMs2 }],
             }
           : undefined,
@@ -122,14 +153,15 @@ export function buildParetoOption<T extends string>(rows: ParetoRow<T>[], config
     aria: { enabled: true, description: `${total} ${config.noun} by type: ${summary}.${selectedText}` },
     grid: { left: 48, right: 48, top: 40, bottom: 40 },
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    graphic: total === 0 ? [emptyMessage(`No ${config.noun} match these filters`, colors.muted)] : [],
     dataset: {
       dimensions: ['key', 'name', 'count', 'cumulativePct'],
       source: rows.map((r) => [r.key, config.names[r.key], r.count, Math.round(r.cumulativePct * 10) / 10]),
     },
-    xAxis: { type: 'category', ...axisStyle(colors), axisLabel: { color: colors.muted, interval: 0 } },
+    xAxis: { type: 'category', axisLabel: { interval: 0 } },
     yAxis: [
-      { type: 'value', name: 'Count', minInterval: 1, ...axisStyle(colors) },
-      { type: 'value', name: 'Cumulative %', min: 0, max: 100, ...axisStyle(colors), splitLine: { show: false } },
+      { type: 'value', name: 'Count', minInterval: 1 },
+      { type: 'value', name: 'Cumulative %', min: 0, max: 100, splitLine: { show: false } },
     ],
     series: [
       {
