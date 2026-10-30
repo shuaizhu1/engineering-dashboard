@@ -55,3 +55,24 @@ export async function query<T>(sql: string): Promise<T[]> {
     await conn.close()
   }
 }
+
+/** Run a parameterized query and return each column as a typed array (for numeric columns). */
+export async function queryColumns(sql: string, ...params: unknown[]): Promise<Record<string, ArrayLike<unknown>>> {
+  const db = await getDb()
+  const conn = await db.connect()
+  try {
+    const statement = await conn.prepare(sql)
+    try {
+      const table = await statement.query(...params)
+      const columns: Record<string, ArrayLike<unknown>> = {}
+      for (const field of table.schema.fields) {
+        columns[field.name] = table.getChild(field.name)!.toArray()
+      }
+      return columns
+    } finally {
+      await statement.close()
+    }
+  } finally {
+    await conn.close()
+  }
+}

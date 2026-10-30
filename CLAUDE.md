@@ -36,7 +36,7 @@ A user should be able to, in about 60 seconds:
   - Popover + Checkbox (multi-select filters), Popover (date range), ToggleGroup (pass/fail/all), Tabs (chart vs table view), Tooltip (defect badges), Dialog (mobile detail / compare mode), AlertDialog (clear filters, optional), ScrollArea (only if it works with TanStack Virtual)
 - **TanStack Virtual** for the large grid/list (5,000+ items).
 - **Data**: Parquet files queried in the browser with **DuckDB-WASM** (Sift lists WebAssembly, Parquet, DuckDB). Seed scripts prepare everything ahead of time (thumbnails as small WebP).
-- **Tests**: Vitest only (with React Testing Library for components). No end-to-end tests.
+- **Tests**: Vitest only, unit tests for pure functions (filters, URL helpers, chart option builders). No React Testing Library, no end-to-end tests.
 - **Hosting**: Vercel.
 
 ## Non-functional targets

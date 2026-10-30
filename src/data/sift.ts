@@ -1,44 +1,34 @@
-import { query, registerParquetViews } from './duckdb'
+import { query, queryColumns, registerParquetViews } from './duckdb'
+import {
+  TELEMETRY_CHANNELS,
+  type Flight,
+  type FlightEvent,
+  type FlightTelemetry,
+  type SiftData,
+  type TelemetryChannel,
+} from './types'
 
-export type FlightLabel = 'vibration' | 'component-failure' | 'good'
-export type EventType = 'vibration_high' | 'vibration_spike' | 'battery_sag'
-
-export interface Flight {
-  flightId: string
-  label: FlightLabel
-  /** Epoch milliseconds (UTC); null when the log has no GPS time. */
-  startedAt: number | null
-  durationS: number
-  swVersion: string | null
-  hardware: string | null
-  maxVibMs2: number
-  minBatteryV: number | null
-  eventCount: number
-}
-
-export interface FlightEvent {
-  eventId: string
-  flightId: string
-  type: EventType
-  startS: number
-  endS: number
-  peak: number
-  unit: string
-}
-
-export interface SiftData {
-  flights: Flight[]
-  events: FlightEvent[]
-}
+export * from './types'
 
 const DATA_DIR = '/data/sift'
 
-export async function loadSiftData(): Promise<SiftData> {
-  await registerParquetViews({
+let viewsReady: Promise<void> | undefined
+
+/** Register the Parquet views once; loaders that run in parallel share the same promise. */
+function ensureViews(): Promise<void> {
+  viewsReady ??= registerParquetViews({
     flights: `${DATA_DIR}/flights.parquet`,
     events: `${DATA_DIR}/events.parquet`,
     telemetry: `${DATA_DIR}/telemetry.parquet`,
+  }).catch((error: unknown) => {
+    viewsReady = undefined
+    throw error
   })
+  return viewsReady
+}
+
+export async function loadSiftData(): Promise<SiftData> {
+  await ensureViews()
 
   const [flights, events] = await Promise.all([
     query<Flight>(`
@@ -70,4 +60,21 @@ export async function loadSiftData(): Promise<SiftData> {
   ])
 
   return { flights, events }
+}
+
+/** All telemetry channels for one flight, or null when the flight has no rows. */
+export async function loadFlightTelemetry(flightId: string): Promise<FlightTelemetry | null> {
+  await ensureViews()
+  // Nulls become NaN so typed arrays keep gaps instead of reading them as 0.
+  const channelSql = TELEMETRY_CHANNELS.map((name) => `coalesce(${name}, 'NaN'::FLOAT) AS ${name}`).join(', ')
+  const columns = await queryColumns(
+    `SELECT t_s, ${channelSql} FROM telemetry WHERE flight_id = ? ORDER BY t_s`,
+    flightId,
+  )
+  const tS = columns.t_s as Float32Array
+  if (tS.length === 0) return null
+  const channels = Object.fromEntries(
+    TELEMETRY_CHANNELS.map((name) => [name, columns[name] as Float32Array]),
+  ) as Record<TelemetryChannel, Float32Array>
+  return { tS, channels }
 }
