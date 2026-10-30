@@ -15,6 +15,7 @@ export const router = createBrowserRouter([
     ErrorBoundary: RootError,
     children: [
       { index: true, Component: Dashboard },
+      { path: 'units/:serial', lazy: () => import('./routes/board') },
       { path: '*', Component: NotFound },
     ],
   },

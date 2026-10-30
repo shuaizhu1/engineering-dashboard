@@ -13,6 +13,7 @@ Reads data/raw/deeppcb/PCBData/group*/ (sparse clone, see README) and writes to 
   thumbs/<id>.webp  160x160 thumbnail for the grid
 
 Failed boards show a DeepPCB tested image with its defects; passed boards show a template image.
+Each failed board's template is written too, as the defect-free reference for side-by-side comparison.
 
 Usage:
   .venv/bin/python scripts/seed_instrumental.py               # small sample
@@ -184,7 +185,10 @@ def main() -> None:
     print("Wrote:")
     write(units, "units.parquet")
     write(defects, "defects.parquet")
-    write_images(all_pairs, set(units["image_id"]))
+    used = set(units["image_id"])
+    # Failed boards also need their template, as the defect-free reference in the detail view.
+    used |= {i.removesuffix("_test") + "_temp" for i in used if i.endswith("_test")}
+    write_images(all_pairs, used)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useRef } from 'react'
+import { Link, useLocation } from 'react-router'
 import { appConfig } from '../config'
 import type { Unit } from '../data/types'
 
@@ -22,6 +23,7 @@ const { record } = appConfig
  * DOM, so thousands of rows scroll smoothly. ARIA table roles keep it a table for screen readers.
  */
 export function BoardGrid({ units, total }: { units: Unit[]; total: number }) {
+  const { search } = useLocation()
   const scrollRef = useRef<HTMLDivElement>(null)
   // The warning concerns React Compiler memoization, which this project doesn't use.
   // oxlint-disable-next-line react/incompatible-library
@@ -73,7 +75,7 @@ export function BoardGrid({ units, total }: { units: Unit[]; total: number }) {
                   style={{ height: ROW_HEIGHT, transform: `translateY(${item.start}px)` }}
                 >
                   <span role="cell" className={`${cell} font-mono`}>
-                    {u.serial}
+                    <Link to={{ pathname: `/units/${u.serial}`, search }}>{u.serial}</Link>
                   </span>
                   <span role="cell" className={cell}>
                     {appConfig.lines[u.line]}

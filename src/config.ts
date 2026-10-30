@@ -16,4 +16,13 @@ export const appConfig = {
     copper: 'Spurious copper',
     'pin-hole': 'Pin hole',
   } satisfies Record<DefectType, string>,
+  /** Defect box colors: saturated so they stand out on the black-and-white board images. */
+  defectColors: {
+    open: '#f76707',
+    short: '#e03131',
+    mousebite: '#ae3ec9',
+    spur: '#1c7ed6',
+    copper: '#2f9e44',
+    'pin-hole': '#f59f00',
+  } satisfies Record<DefectType, string>,
 } as const
