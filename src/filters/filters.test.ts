@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { Flight, FlightEvent } from '../data/types'
-import { EMPTY_FILTERS, filterEvents, filterFlights, parseFilters, serializeFilters, type Filters } from './filters'
+import {
+  EMPTY_FILTERS,
+  applyFilters,
+  filterEvents,
+  filterFlights,
+  hasActiveFilters,
+  parseFilters,
+  serializeFilters,
+  type Filters,
+} from './filters'
 
 function flight(flightId: string, label: Flight['label'], startedAt: string | null): Flight {
   return {
@@ -80,6 +89,27 @@ describe('serializeFilters', () => {
       to: '2026-10-31',
     }
     expect(parseFilters(serializeFilters(filters))).toEqual(filters)
+  })
+})
+
+describe('applyFilters', () => {
+  it('replaces filter keys and keeps other parameters', () => {
+    const params = new URLSearchParams('mode=sift&label=good&from=2026-01-01')
+    const next = applyFilters(params, { ...EMPTY_FILTERS, eventTypes: ['battery_sag'] })
+    expect(next.toString()).toBe('mode=sift&event=battery_sag')
+  })
+
+  it('does not modify the input', () => {
+    const params = new URLSearchParams('label=good')
+    applyFilters(params, EMPTY_FILTERS)
+    expect(params.toString()).toBe('label=good')
+  })
+})
+
+describe('hasActiveFilters', () => {
+  it('is false only for empty filters', () => {
+    expect(hasActiveFilters(EMPTY_FILTERS)).toBe(false)
+    expect(hasActiveFilters({ ...EMPTY_FILTERS, to: '2026-10-01' })).toBe(true)
   })
 })
 

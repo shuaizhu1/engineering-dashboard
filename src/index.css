@@ -1,68 +1,54 @@
-/* Minimal base styles until Tailwind is added. */
+@import 'tailwindcss';
+
+/* Design tokens. Values switch with the color scheme; Tailwind utilities read them (bg-surface, text-muted, …). */
 :root {
+  --bg: #f6f8fa;
+  --surface: #ffffff;
   --text: #1f2328;
   --muted: #59636e;
-  --bg: #ffffff;
   --border: #d1d9e0;
   --accent: #0b62d6;
+  --accent-contrast: #ffffff;
+  --danger: #c4302b;
 
-  font: 15px/1.5 system-ui, 'Segoe UI', Roboto, sans-serif;
   color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --bg: #0d1117;
+    --surface: #151b23;
     --text: #e6edf3;
     --muted: #9198a1;
-    --bg: #0d1117;
     --border: #3d444d;
     --accent: #4493f8;
+    --accent-contrast: #0d1117;
+    --danger: #f85149;
   }
 }
 
-body {
-  margin: 0;
-  background: var(--bg);
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-danger: var(--danger);
 }
 
-a {
-  color: var(--accent);
-}
+@layer base {
+  body {
+    @apply bg-bg text-text antialiased;
+    font: 15px/1.5 system-ui, 'Segoe UI', Roboto, sans-serif;
+  }
 
-.app {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 16px;
-}
+  a {
+    @apply text-accent underline-offset-2 hover:underline;
+  }
 
-.app-header {
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
-  font-weight: 600;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-th,
-td {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
-  text-align: left;
-}
-
-th {
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.chart-skeleton {
-  height: 320px;
-  border-radius: 6px;
-  background: var(--border);
-  opacity: 0.4;
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
 }

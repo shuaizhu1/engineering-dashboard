@@ -12,3 +12,8 @@ export function useSiftData(): SiftData {
   if (!data) throw new Error('useSiftData must be used under the root route')
   return data
 }
+
+/** The dataset is static, so filter changes in the query string never need to reload it. */
+export function rootShouldRevalidate(): boolean {
+  return false
+}

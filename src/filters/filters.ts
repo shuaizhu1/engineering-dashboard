@@ -64,6 +64,18 @@ export function serializeFilters(filters: Filters): URLSearchParams {
   return params
 }
 
+/** Replace the filter keys in `params`, keeping any other query parameters (e.g. `mode`). */
+export function applyFilters(params: URLSearchParams, filters: Filters): URLSearchParams {
+  const next = new URLSearchParams(params)
+  for (const key of Object.values(PARAM)) next.delete(key)
+  for (const [key, value] of serializeFilters(filters)) next.set(key, value)
+  return next
+}
+
+export function hasActiveFilters(filters: Filters): boolean {
+  return filters.labels.length > 0 || filters.eventTypes.length > 0 || filters.from !== null || filters.to !== null
+}
+
 function inDateRange(startedAt: number | null, from: string | null, to: string | null): boolean {
   if (!from && !to) return true
   // A flight without GPS time can't be placed in a date range.

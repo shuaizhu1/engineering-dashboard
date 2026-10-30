@@ -1,5 +1,6 @@
 import type { EChartsCoreOption } from 'echarts/core'
 import type { FlightEvent } from '../data/types'
+import { DEFAULT_CHART_COLORS, axisStyle, type ChartColors } from './chartTheme'
 
 export interface ChannelSeries {
   tS: ArrayLike<number>
@@ -11,6 +12,7 @@ export interface ChannelChartConfig {
   unit: string
   /** Event types to shade on this chart. */
   eventTypes: FlightEvent['type'][]
+  colors?: ChartColors
 }
 
 /** Rows for `dataset.source`; NaN becomes null so ECharts draws a gap. */
@@ -32,6 +34,7 @@ export function buildChannelOption(
 ): EChartsCoreOption {
   const shaded = events.filter((e) => config.eventTypes.includes(e.type))
   const label = `${config.name} (${config.unit})`
+  const colors = config.colors ?? DEFAULT_CHART_COLORS
 
   return {
     animation: false,
@@ -42,8 +45,17 @@ export function buildChannelOption(
     grid: { left: 56, right: 24, top: 32, bottom: 72 },
     dataset: { source: toDatasetRows(series) },
     tooltip: { trigger: 'axis' },
-    xAxis: { type: 'value', name: 'Time (s)', nameLocation: 'middle', nameGap: 28, min: 'dataMin', max: 'dataMax' },
-    yAxis: { type: 'value', name: label },
+    xAxis: {
+      type: 'value',
+      name: 'Time (s)',
+      nameLocation: 'middle',
+      nameGap: 28,
+      min: 'dataMin',
+      max: 'dataMax',
+      ...axisStyle(colors),
+      splitLine: { show: false },
+    },
+    yAxis: { type: 'value', name: label, ...axisStyle(colors) },
     dataZoom: [
       { type: 'inside', xAxisIndex: 0 },
       { type: 'slider', xAxisIndex: 0, bottom: 8 },
@@ -55,6 +67,7 @@ export function buildChannelOption(
         encode: { x: 0, y: 1 },
         showSymbol: false,
         sampling: 'lttb',
+        itemStyle: { color: colors.accent },
         lineStyle: { width: 1 },
         connectNulls: false,
         markArea: {
