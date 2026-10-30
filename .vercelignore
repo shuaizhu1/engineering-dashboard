@@ -1,0 +1,7 @@
+# Keep CLI uploads small: Vercel builds from source and only needs the app and public/.
+node_modules
+dist
+.venv
+flight_review
+data/raw
+.claude

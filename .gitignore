@@ -27,3 +27,5 @@ dist-ssr
 flight_review
 data/raw
 .venv
+.vercel
+.env*
