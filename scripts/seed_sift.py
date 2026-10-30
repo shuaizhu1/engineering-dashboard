@@ -237,10 +237,16 @@ def process(path: Path, label: str) -> tuple[dict, pd.DataFrame, list[dict]]:
         "sw_version": firmware_version(ulog),
         "hardware": ulog.msg_info_dict.get("ver_hw"),
         "max_vib_ms2": float(np.nanmax(telemetry["vib_ms2"])),
-        "min_battery_v": float(np.nanmin(telemetry["battery_v"])) if bat is not None else None,
+        # Ignore sensor dropouts (readings near 0 V) when reporting the lowest battery voltage.
+        "min_battery_v": min_valid_battery(telemetry["battery_v"]) if bat is not None else None,
         "event_count": len(events),
     }
     return flight, telemetry, events
+
+
+def min_valid_battery(voltage: pd.Series) -> float | None:
+    valid = voltage[voltage >= MIN_VALID_BATTERY_V]
+    return float(valid.min()) if valid.notna().any() else None
 
 
 def detect_events(flight_id: str, tel: pd.DataFrame) -> list[dict]:
@@ -284,10 +290,10 @@ def event(flight_id, kind, t, s, e, peak, unit) -> dict:
     }
 
 
-def write(df: pd.DataFrame, name: str, schema: pa.Schema | None = None) -> None:
+def write(df: pd.DataFrame, name: str, schema: pa.Schema | None = None, compression: str = "zstd") -> None:
     table = pa.Table.from_pandas(df, schema=schema, preserve_index=False)
     path = OUT_DIR / name
-    pq.write_table(table, path, compression="zstd")
+    pq.write_table(table, path, compression=compression)
     print(f"  {path.relative_to(ROOT)}  {len(df):>7} rows  {path.stat().st_size / 1024:>7.0f} KB")
 
 
@@ -335,7 +341,9 @@ def main() -> None:
     print("Wrote:")
     flights_df = pd.DataFrame(flights)
     flights_df["started_at"] = pd.to_datetime(flights_df["started_at"], utc=True)
-    write(flights_df, "flights.parquet")
+    # The dashboard reads the two small tables with hyparquet, which decodes Snappy natively;
+    # DuckDB-WASM reads the large telemetry table, where ZSTD is smaller.
+    write(flights_df, "flights.parquet", compression="snappy")
 
     tel_df = pd.concat(telemetry, ignore_index=True)
     float_cols = [c for c in tel_df.columns if c != "flight_id"]
@@ -346,7 +354,7 @@ def main() -> None:
         ("event_id", pa.string()), ("flight_id", pa.string()), ("type", pa.string()),
         ("start_s", pa.float64()), ("end_s", pa.float64()), ("peak", pa.float64()), ("unit", pa.string()),
     ])
-    write(pd.DataFrame(events, columns=events_schema.names), "events.parquet", events_schema)
+    write(pd.DataFrame(events, columns=events_schema.names), "events.parquet", events_schema, compression="snappy")
 
 
 if __name__ == "__main__":

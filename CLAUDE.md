@@ -35,7 +35,7 @@ A user should be able to, in about 60 seconds:
 - **Radix UI + Tailwind** for the component layer. Wrap each primitive once in our own component (e.g. `<FilterSelect>`, `<Tip>`); app code doesn't import Radix directly.
   - Popover + Checkbox (multi-select filters), Popover (date range), ToggleGroup (pass/fail/all), Tabs (chart vs table view), Tooltip (defect badges), Dialog (compare mode), AlertDialog (clear filters, optional), ScrollArea (only if it works with TanStack Virtual)
 - **TanStack Virtual** for the large grid/list (5,000+ items).
-- **Data**: Parquet files queried in the browser with **DuckDB-WASM** (Sift lists WebAssembly, Parquet, DuckDB). Seed scripts prepare everything ahead of time (thumbnails as small WebP).
+- **Data**: Parquet files in the browser (Sift lists WebAssembly, Parquet, DuckDB). Small summary tables are read with **hyparquet** (pure JS) so the dashboard renders without waiting for WebAssembly; **DuckDB-WASM** loads during idle time and queries the large telemetry Parquet. Seed scripts prepare everything ahead of time (thumbnails as small WebP). See `docs/performance.md`.
 - **Tests**: Vitest only, unit tests for pure functions (filters, URL helpers, chart option builders). No React Testing Library, no end-to-end tests.
 - **Hosting**: Vercel.
 

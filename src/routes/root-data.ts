@@ -1,10 +1,17 @@
-import { useRouteLoaderData } from 'react-router'
+import { useRouteLoaderData, type LoaderFunctionArgs } from 'react-router'
 import { loadSiftData, type SiftData } from '../data/sift'
+import { addStressFlights, parseStressCount } from '../data/stress'
 
 export const ROOT_ROUTE_ID = 'root'
 
-export function rootLoader(): Promise<SiftData> {
-  return loadSiftData()
+/** User Timing mark set when the dashboard data is ready; Lighthouse and DevTools report it. */
+export const DATA_READY_MARK = 'sift-data-ready'
+
+export async function rootLoader({ request }: LoaderFunctionArgs): Promise<SiftData> {
+  const data = await loadSiftData()
+  const stressed = addStressFlights(data, parseStressCount(new URL(request.url).searchParams))
+  performance.mark(DATA_READY_MARK)
+  return stressed
 }
 
 export function useSiftData(): SiftData {

@@ -1,11 +1,10 @@
 import type { ECharts } from 'echarts/core'
-import { Suspense, lazy, useMemo, type ReactNode } from 'react'
-import { Link, useLocation } from 'react-router'
+import { Suspense, lazy, useEffect, useMemo, type ReactNode } from 'react'
 import type { EChartEventHandlers } from '../charts/EChart'
 import { TREND_BRUSH_ID, buildParetoOption, buildVibrationTrendOption } from '../charts/dashboardOptions'
 import { DateRangeFilter } from '../components/DateRangeFilter'
 import { FilterSelect } from '../components/FilterSelect'
-import { EVENT_TYPES, FLIGHT_LABELS, type EventType, type Flight } from '../data/types'
+import { EVENT_TYPES, FLIGHT_LABELS, type EventType } from '../data/types'
 import { eventTypePareto } from '../filters/aggregate'
 import {
   EMPTY_FILTERS,
@@ -19,24 +18,10 @@ import {
 import { useChartColors } from '../hooks/useChartColors'
 import { useFilters } from '../hooks/useFilters'
 import { siftMode } from '../modes/sift'
+import { FlightGrid } from './flight-grid'
 import { useSiftData } from './root-data'
 
 const EChart = lazy(() => import('../charts/EChart'))
-
-/** Phase 1 shows a plain list; virtualization comes with the full dataset. */
-const GRID_LIMIT = 100
-
-const dateFormat = new Intl.DateTimeFormat(undefined, {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-  timeZone: 'UTC',
-})
-
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = Math.round(seconds % 60)
-  return m > 0 ? `${m} min ${s} s` : `${s} s`
-}
 
 /** Dragging on the trend chart draws a date range without first picking a toolbox tool. */
 function enableDateBrush(chart: ECharts) {
@@ -72,9 +57,21 @@ function ChartCard({ title, hint, action, children }: ChartCardProps) {
 }
 
 export function Dashboard() {
-  const { flights, events } = useSiftData()
+  const { flights, events, syntheticCount } = useSiftData()
   const [filters, setFilters] = useFilters()
   const colors = useChartColors()
+
+  // Load DuckDB-WASM and the telemetry view while the user looks at the dashboard,
+  // so opening a flight doesn't wait for the WebAssembly download.
+  useEffect(() => {
+    const warmUp = () => void import('../data/telemetry').then((m) => m.warmUpTelemetry()).catch(() => {})
+    if ('requestIdleCallback' in window) {
+      const id = requestIdleCallback(warmUp, { timeout: 3000 })
+      return () => cancelIdleCallback(id)
+    }
+    const id = setTimeout(warmUp, 1000)
+    return () => clearTimeout(id)
+  }, [])
 
   const matchingFlights = useMemo(() => filterFlights(flights, events, filters), [flights, events, filters])
   const matchingEvents = useMemo(
@@ -146,6 +143,14 @@ export function Dashboard() {
           {matchingFlights.length} of {flights.length} {siftMode.record.plural} · {matchingEvents.length} events
         </p>
       </div>
+
+      {syntheticCount > 0 && (
+        <p role="note" className="rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-sm">
+          Stress test: {syntheticCount.toLocaleString()} synthetic flights cloned from{' '}
+          {(flights.length - syntheticCount).toLocaleString()} real ones. Remove <code>stress</code> from the URL and
+          reload for real data only.
+        </p>
+      )}
 
       <div role="group" aria-label="Filters" className="flex flex-wrap items-center gap-2">
         <FilterSelect
@@ -224,63 +229,5 @@ export function Dashboard() {
 
       <FlightGrid flights={matchingFlights} total={flights.length} />
     </div>
-  )
-}
-
-function FlightGrid({ flights, total }: { flights: Flight[]; total: number }) {
-  const { search } = useLocation()
-
-  if (flights.length === 0) {
-    return (
-      <section className="rounded-lg border border-border bg-surface p-8 text-center">
-        <h2 className="font-semibold">No {siftMode.record.plural} match these filters</h2>
-        <p className="mt-1 text-sm text-muted">
-          Try removing a filter. {total} {siftMode.record.plural} are available.
-        </p>
-      </section>
-    )
-  }
-
-  const shown = flights.slice(0, GRID_LIMIT)
-  return (
-    <section className="overflow-x-auto rounded-lg border border-border bg-surface">
-      <h2 className="sr-only">Matching {siftMode.record.plural}</h2>
-      <table className="w-full text-left text-sm">
-        <thead className="text-muted">
-          <tr className="border-b border-border">
-            <th scope="col" className="px-3 py-2 font-medium">Flight</th>
-            <th scope="col" className="px-3 py-2 font-medium">Label</th>
-            <th scope="col" className="px-3 py-2 font-medium">Started (UTC)</th>
-            <th scope="col" className="px-3 py-2 font-medium">Duration</th>
-            <th scope="col" className="px-3 py-2 text-right font-medium">Max vibration (m/s²)</th>
-            <th scope="col" className="px-3 py-2 text-right font-medium">Events</th>
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map((f) => (
-            <tr key={f.flightId} className="border-b border-border last:border-0">
-              <td className="px-3 py-2 font-mono">
-                <Link to={{ pathname: `/flights/${f.flightId}`, search }}>{f.flightId.slice(0, 8)}</Link>
-              </td>
-              <td className="px-3 py-2">
-                <span className="inline-flex items-center gap-1.5">
-                  <span aria-hidden="true" className="size-2 rounded-full" style={{ background: siftMode.labelColors[f.label] }} />
-                  {siftMode.labels[f.label]}
-                </span>
-              </td>
-              <td className="px-3 py-2">{f.startedAt === null ? '—' : dateFormat.format(f.startedAt)}</td>
-              <td className="px-3 py-2">{formatDuration(f.durationS)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{f.maxVibMs2.toFixed(1)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{f.eventCount}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {flights.length > GRID_LIMIT && (
-        <p className="border-t border-border px-3 py-2 text-sm text-muted">
-          Showing the first {GRID_LIMIT} of {flights.length}.
-        </p>
-      )}
-    </section>
   )
 }

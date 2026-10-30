@@ -8,7 +8,8 @@ import {
   type ShouldRevalidateFunctionArgs,
 } from 'react-router'
 import { buildSyncedChannelsOption, panelsWithData, syncedChartHeight } from '../charts/telemetryOption'
-import { loadFlightTelemetry } from '../data/sift'
+import { loadFlightTelemetry } from '../data/telemetry'
+import { isSynthetic, shortFlightId, sourceFlightId } from '../data/stress'
 import type { Flight, FlightEvent } from '../data/types'
 import { filterFlights, parseFilters } from '../filters/filters'
 import { neighbors } from '../filters/navigation'
@@ -22,7 +23,8 @@ const EChart = lazy(() => import('../charts/EChart'))
 const FOCUS_PARAM = 'focus'
 
 export function loader({ params }: LoaderFunctionArgs) {
-  return loadFlightTelemetry(params.flightId ?? '')
+  // Synthetic stress-test flights reuse the telemetry of the real flight they were cloned from.
+  return loadFlightTelemetry(sourceFlightId(params.flightId ?? ''))
 }
 
 /** Telemetry depends only on the flight, not on the dashboard filters or focus in the query string. */
@@ -118,7 +120,7 @@ export function Component() {
 
       <header className="space-y-1">
         <h1 className="flex items-center gap-3 text-xl font-semibold">
-          <span className="font-mono">Flight {flight.flightId.slice(0, 8)}</span>
+          <span className="font-mono">Flight {shortFlightId(flight.flightId)}</span>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-xs font-medium">
             <span
               aria-hidden="true"
@@ -128,6 +130,11 @@ export function Component() {
             {siftMode.labels[flight.label]}
           </span>
         </h1>
+        {isSynthetic(flight.flightId) && (
+          <p className="text-sm text-muted">
+            Synthetic stress-test copy of flight {sourceFlightId(flight.flightId).slice(0, 8)}, showing its telemetry.
+          </p>
+        )}
         <p className="text-sm text-muted">
           {flight.hardware ?? 'Unknown hardware'} · {flight.swVersion ?? 'unknown firmware'} ·{' '}
           {flight.startedAt === null ? 'no GPS time' : `${dateFormat.format(flight.startedAt)} UTC`}
@@ -207,7 +214,7 @@ function FlightPager({ prev, next, index, total, search }: FlightPagerProps) {
         <Link
           to={{ pathname: `/flights/${prev.flightId}`, search }}
           className={linkClass}
-          aria-label={`Previous flight, ${prev.flightId.slice(0, 8)}`}
+          aria-label={`Previous flight, ${shortFlightId(prev.flightId)}`}
         >
           ← Prev
         </Link>
@@ -223,7 +230,7 @@ function FlightPager({ prev, next, index, total, search }: FlightPagerProps) {
         <Link
           to={{ pathname: `/flights/${next.flightId}`, search }}
           className={linkClass}
-          aria-label={`Next flight, ${next.flightId.slice(0, 8)}`}
+          aria-label={`Next flight, ${shortFlightId(next.flightId)}`}
         >
           Next →
         </Link>

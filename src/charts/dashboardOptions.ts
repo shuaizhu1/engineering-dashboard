@@ -1,5 +1,6 @@
 import type { EChartsCoreOption } from 'echarts/core'
 import type { Flight, FlightLabel } from '../data/types'
+import { shortFlightId } from '../data/stress'
 import type { ParetoRow } from '../filters/aggregate'
 import { DEFAULT_CHART_COLORS, axisStyle, type ChartColors } from './chartTheme'
 
@@ -68,7 +69,7 @@ export function buildVibrationTrendOption(flights: Flight[], config: TrendConfig
     tooltip: {
       trigger: 'item',
       formatter: (p: { data: [number, number, string]; seriesName: string }) =>
-        `${p.data[2].slice(0, 8)} · ${p.seriesName}<br/>${new Date(p.data[0]).toISOString().slice(0, 10)} · ${p.data[1].toFixed(1)} m/s²`,
+        `${shortFlightId(p.data[2])} · ${p.seriesName}<br/>${new Date(p.data[0]).toISOString().slice(0, 10)} · ${p.data[1].toFixed(1)} m/s²`,
     },
     xAxis: { type: 'time', ...axisStyle(colors), splitLine: { show: false } },
     yAxis: { type: 'value', name: 'Max vibration (m/s²)', min: 0, ...axisStyle(colors) },

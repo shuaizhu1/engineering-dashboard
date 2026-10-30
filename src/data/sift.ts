@@ -1,81 +1,62 @@
-import { query, queryColumns, registerParquetViews } from './duckdb'
-import {
-  TELEMETRY_CHANNELS,
-  type Flight,
-  type FlightEvent,
-  type FlightTelemetry,
-  type SiftData,
-  type TelemetryChannel,
-} from './types'
+import { parquetReadObjects } from 'hyparquet'
+import type { EventType, Flight, FlightEvent, FlightLabel, SiftData } from './types'
 
 export * from './types'
 
-const DATA_DIR = '/data/sift'
+export const DATA_DIR = '/data/sift'
 
-let viewsReady: Promise<void> | undefined
+type Row = Record<string, unknown>
 
-/** Register the Parquet views once; loaders that run in parallel share the same promise. */
-function ensureViews(): Promise<void> {
-  viewsReady ??= registerParquetViews({
-    flights: `${DATA_DIR}/flights.parquet`,
-    events: `${DATA_DIR}/events.parquet`,
-    telemetry: `${DATA_DIR}/telemetry.parquet`,
-  }).catch((error: unknown) => {
-    viewsReady = undefined
-    throw error
-  })
-  return viewsReady
+const num = (v: unknown) => (typeof v === 'bigint' ? Number(v) : (v as number))
+const optionalNum = (v: unknown) => (v === null || v === undefined ? null : num(v))
+const optionalStr = (v: unknown) => (v === null || v === undefined ? null : String(v))
+
+export function toFlight(row: Row): Flight {
+  const startedAt = row.started_at
+  return {
+    flightId: String(row.flight_id),
+    label: row.label as FlightLabel,
+    startedAt: startedAt instanceof Date ? startedAt.getTime() : optionalNum(startedAt),
+    durationS: num(row.duration_s),
+    airborneS: num(row.airborne_s),
+    swVersion: optionalStr(row.sw_version),
+    hardware: optionalStr(row.hardware),
+    maxVibMs2: num(row.max_vib_ms2),
+    minBatteryV: optionalNum(row.min_battery_v),
+    eventCount: num(row.event_count),
+  }
 }
 
+export function toEvent(row: Row): FlightEvent {
+  return {
+    eventId: String(row.event_id),
+    flightId: String(row.flight_id),
+    type: row.type as EventType,
+    startS: num(row.start_s),
+    endS: num(row.end_s),
+    peak: num(row.peak),
+    unit: String(row.unit),
+  }
+}
+
+async function readParquet(path: string): Promise<Row[]> {
+  const response = await fetch(path)
+  if (!response.ok) throw new Error(`Could not load ${path} (${response.status})`)
+  return parquetReadObjects({ file: await response.arrayBuffer() })
+}
+
+/**
+ * The dashboard's summary tables (about 16 KB) read with hyparquet, a small pure-JS Parquet reader,
+ * so the first screen doesn't wait for DuckDB-WASM. DuckDB loads later for telemetry (see telemetry.ts).
+ */
 export async function loadSiftData(): Promise<SiftData> {
-  await ensureViews()
-
-  const [flights, events] = await Promise.all([
-    query<Flight>(`
-      SELECT
-        flight_id            AS flightId,
-        label,
-        epoch_ms(started_at)::DOUBLE AS startedAt,
-        duration_s           AS durationS,
-        airborne_s           AS airborneS,
-        sw_version           AS swVersion,
-        hardware,
-        max_vib_ms2          AS maxVibMs2,
-        min_battery_v        AS minBatteryV,
-        event_count::INTEGER AS eventCount
-      FROM flights
-      ORDER BY started_at DESC NULLS LAST
-    `),
-    query<FlightEvent>(`
-      SELECT
-        event_id  AS eventId,
-        flight_id AS flightId,
-        type,
-        start_s   AS startS,
-        end_s     AS endS,
-        peak,
-        unit
-      FROM events
-      ORDER BY flight_id, start_s
-    `),
+  const [flightRows, eventRows] = await Promise.all([
+    readParquet(`${DATA_DIR}/flights.parquet`),
+    readParquet(`${DATA_DIR}/events.parquet`),
   ])
-
-  return { flights, events }
-}
-
-/** All telemetry channels for one flight, or null when the flight has no rows. */
-export async function loadFlightTelemetry(flightId: string): Promise<FlightTelemetry | null> {
-  await ensureViews()
-  // Nulls become NaN so typed arrays keep gaps instead of reading them as 0.
-  const channelSql = TELEMETRY_CHANNELS.map((name) => `coalesce(${name}, 'NaN'::FLOAT) AS ${name}`).join(', ')
-  const columns = await queryColumns(
-    `SELECT t_s, ${channelSql} FROM telemetry WHERE flight_id = ? ORDER BY t_s`,
-    flightId,
-  )
-  const tS = columns.t_s as Float32Array
-  if (tS.length === 0) return null
-  const channels = Object.fromEntries(
-    TELEMETRY_CHANNELS.map((name) => [name, columns[name] as Float32Array]),
-  ) as Record<TelemetryChannel, Float32Array>
-  return { tS, channels }
+  const flights = flightRows.map(toFlight).sort((a, b) => (b.startedAt ?? -Infinity) - (a.startedAt ?? -Infinity))
+  const events = eventRows
+    .map(toEvent)
+    .sort((a, b) => a.flightId.localeCompare(b.flightId) || a.startS - b.startS)
+  return { flights, events, syntheticCount: 0 }
 }

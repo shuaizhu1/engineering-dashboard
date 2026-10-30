@@ -44,18 +44,6 @@ export async function registerParquetViews(views: Record<string, string>): Promi
   }
 }
 
-/** Run a query and return plain row objects. Cast BIGINT columns in SQL; they arrive as bigint otherwise. */
-export async function query<T>(sql: string): Promise<T[]> {
-  const db = await getDb()
-  const conn = await db.connect()
-  try {
-    const table = await conn.query(sql)
-    return table.toArray().map((row) => row.toJSON() as T)
-  } finally {
-    await conn.close()
-  }
-}
-
 /** Run a parameterized query and return each column as a typed array (for numeric columns). */
 export async function queryColumns(sql: string, ...params: unknown[]): Promise<Record<string, ArrayLike<unknown>>> {
   const db = await getDb()

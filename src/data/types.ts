@@ -32,6 +32,8 @@ export interface FlightEvent {
 export interface SiftData {
   flights: Flight[]
   events: FlightEvent[]
+  /** Synthetic flights added for scale testing (`?stress=N`); 0 for real data only. */
+  syntheticCount: number
 }
 
 export const TELEMETRY_CHANNELS = [
