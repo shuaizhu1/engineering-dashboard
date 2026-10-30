@@ -23,9 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 
-# PX4 data pipeline (raw logs and the flight_review clone stay local)
-flight_review
+# Raw datasets stay local
 data/raw
+__pycache__
 .venv
 .vercel
 .env*
