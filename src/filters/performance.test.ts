@@ -49,7 +49,6 @@ function dashboardUpdate(data: SiftData, filters: Filters) {
   buildVibrationTrendOption(trendFlights, {
     labels: siftMode.labels,
     labelColors: siftMode.labelColors,
-    thresholdMs2: siftMode.vibrationThresholdMs2,
     selectedRange: dateRangeBounds(filters.from, filters.to),
   })
   buildParetoOption(eventTypePareto(paretoEvents, EVENT_TYPES), { names: siftMode.eventTypes, noun: 'events' })

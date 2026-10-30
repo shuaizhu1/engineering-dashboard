@@ -68,8 +68,6 @@ export const siftMode = {
   ] satisfies ChannelPanel[],
   /** Series colors within a panel (roll/pitch, motors 1–4). */
   seriesColors: ['#4c8dff', '#f28c28', '#2fb37a', '#b06cf0'],
-  /** Matches VIB_HIGH_MS2 in scripts/seed_sift.py. */
-  vibrationThresholdMs2: 4,
 } as const
 
 export type SiftMode = typeof siftMode

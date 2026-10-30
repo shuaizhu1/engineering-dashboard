@@ -21,7 +21,6 @@ function flight(flightId: string, label: Flight['label'], startedAt: string | nu
 const trendConfig = {
   labels: siftMode.labels,
   labelColors: siftMode.labelColors,
-  thresholdMs2: siftMode.vibrationThresholdMs2,
 }
 
 describe('buildVibrationTrendOption', () => {
@@ -47,8 +46,9 @@ describe('buildVibrationTrendOption', () => {
     expect(option.aria.description).toContain('1 flights without a start time')
   })
 
-  it('draws the vibration threshold once', () => {
-    expect(option.series[0].markLine?.data).toEqual([{ yAxis: 4 }])
+  it('draws a median reference line once, from the flights shown', () => {
+    // Dated flights have max vibration 9, 1 and 7; the undated one is left out.
+    expect(option.series[0].markLine?.data).toEqual([{ yAxis: 7 }])
     expect(option.series[1].markLine).toBeUndefined()
   })
 

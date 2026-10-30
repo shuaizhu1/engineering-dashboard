@@ -46,21 +46,29 @@ TOPICS = [
     "vehicle_land_detected",
 ]
 
-# Vibration metric: rolling std of the accelerometer magnitude over this window.
+# Event rules. Airframes differ too much (IMU mounting, filtering, logging rate) for fixed vibration
+# levels to mean the same thing across flights, so the rules flag anomalies relative to each flight's
+# own baseline, and only while airborne (landing impacts and ground handling are not anomalies).
+# Tuned so most good-rated flights have no events; see docs/event-rules.md.
+
+# Vibration metric: high-frequency acceleration. Subtracting a short rolling mean removes the
+# low-frequency motion of normal maneuvering; the RMS of what's left is vibration.
+VIB_HIGHPASS_WINDOW_S = 0.1
 VIB_WINDOW_S = 0.5
-# vibration_high: sustained vibration above an absolute level.
-VIB_HIGH_MS2 = 4.0
+# vibration_high: vibration stays well above this flight's typical level.
+VIB_HIGH_RATIO = 2.0
+VIB_HIGH_FLOOR_MS2 = 4.0
 VIB_HIGH_MIN_DURATION_S = 10.0
-# vibration_spike: short burst well above the trailing baseline.
+# vibration_spike: short burst far above the trailing baseline.
 VIB_SPIKE_BASELINE_S = 30.0
-VIB_SPIKE_RATIO = 2.0
-VIB_SPIKE_FLOOR_MS2 = 3.0
-VIB_SPIKE_MIN_DURATION_S = 0.3
+VIB_SPIKE_RATIO = 3.0
+VIB_SPIKE_FLOOR_MS2 = 5.0
+VIB_SPIKE_MIN_DURATION_S = 0.2
 
 # battery_sag: voltage drop below its rolling median, relative to that median.
 SAG_BASELINE_S = 20.0
-SAG_THRESHOLD = 0.015
-SAG_MIN_DURATION_S = 0.5
+SAG_THRESHOLD = 0.05
+SAG_MIN_DURATION_S = 1.0
 
 # Events closer together than this are merged into one.
 EVENT_MERGE_GAP_S = 1.0
@@ -92,12 +100,15 @@ def quat_to_euler_deg(q0, q1, q2, q3):
 
 
 def vibration_metric(sc, t0: int) -> tuple[np.ndarray, np.ndarray]:
+    """RMS of high-pass filtered 3-axis acceleration (m/s²)."""
     t = seconds(sc, t0)
-    mag = np.sqrt(sum(sc[f"accelerometer_m_s2[{i}]"].astype(np.float64) ** 2 for i in range(3)))
+    acc = np.stack([sc[f"accelerometer_m_s2[{i}]"].astype(np.float64) for i in range(3)], axis=1)
     rate = len(t) / max(t[-1] - t[0], 1e-6)
+    hp_window = max(int(rate * VIB_HIGHPASS_WINDOW_S), 2)
+    high_pass = acc - pd.DataFrame(acc).rolling(hp_window, center=True, min_periods=1).mean().to_numpy()
     window = max(int(rate * VIB_WINDOW_S), 2)
-    vib = pd.Series(mag).rolling(window, center=True, min_periods=window // 2).std().to_numpy()
-    return t, vib
+    power = pd.Series((high_pass**2).sum(axis=1)).rolling(window, center=True, min_periods=window // 2).mean()
+    return t, np.sqrt(power.to_numpy())
 
 
 def find_runs(mask: np.ndarray, t: np.ndarray, min_duration_s: float) -> list[tuple[int, int]]:
@@ -155,6 +166,14 @@ def airborne_seconds(ulog: ULog) -> float | None:
     # Each sample's state lasts until the next sample (the last one until the end of the log).
     durations = np.diff(np.append(t, ulog.last_timestamp)) / 1e6
     return float(durations[land["landed"] == 0].sum())
+
+
+def airborne_on_grid(ulog: ULog, t_grid: np.ndarray) -> np.ndarray:
+    """Boolean mask: whether the land detector reported the vehicle airborne at each grid time."""
+    land = topic(ulog, "vehicle_land_detected")
+    t_land = seconds(land, ulog.start_timestamp)
+    idx = np.searchsorted(t_land, t_grid, side="right") - 1
+    return (idx >= 0) & (land["landed"][np.clip(idx, 0, None)] == 0)
 
 
 def process(path: Path, label: str) -> tuple[dict, pd.DataFrame, list[dict]]:
@@ -226,7 +245,8 @@ def process(path: Path, label: str) -> tuple[dict, pd.DataFrame, list[dict]]:
     telemetry = pd.DataFrame(cols)
     telemetry.insert(0, "flight_id", flight_id)
 
-    events = detect_events(flight_id, telemetry)
+    airborne = airborne_on_grid(ulog, t_grid)
+    events = detect_events(flight_id, telemetry, airborne)
 
     flight = {
         "flight_id": flight_id,
@@ -236,7 +256,7 @@ def process(path: Path, label: str) -> tuple[dict, pd.DataFrame, list[dict]]:
         "airborne_s": airborne_s,
         "sw_version": firmware_version(ulog),
         "hardware": ulog.msg_info_dict.get("ver_hw"),
-        "max_vib_ms2": float(np.nanmax(telemetry["vib_ms2"])),
+        "max_vib_ms2": float(np.nanmax(telemetry["vib_ms2"][airborne])),
         # Ignore sensor dropouts (readings near 0 V) when reporting the lowest battery voltage.
         "min_battery_v": min_valid_battery(telemetry["battery_v"]) if bat is not None else None,
         "event_count": len(events),
@@ -249,18 +269,20 @@ def min_valid_battery(voltage: pd.Series) -> float | None:
     return float(valid.min()) if valid.notna().any() else None
 
 
-def detect_events(flight_id: str, tel: pd.DataFrame) -> list[dict]:
+def detect_events(flight_id: str, tel: pd.DataFrame, airborne: np.ndarray) -> list[dict]:
     t = tel["t_s"].to_numpy()
     events: list[dict] = []
 
     vib_series = tel["vib_ms2"]
     vib = vib_series.to_numpy()
-    for s, e in find_runs(vib > VIB_HIGH_MS2, t, VIB_HIGH_MIN_DURATION_S):
+    typical = np.nanmedian(vib[airborne])
+    high = airborne & (vib > VIB_HIGH_RATIO * typical) & (vib > VIB_HIGH_FLOOR_MS2)
+    for s, e in find_runs(high, t, VIB_HIGH_MIN_DURATION_S):
         events.append(event(flight_id, "vibration_high", t, s, e, np.nanmax(vib[s : e + 1]), "m/s²"))
 
     window = int(VIB_SPIKE_BASELINE_S * RESAMPLE_HZ)
     baseline = vib_series.rolling(window, min_periods=window // 6).median().shift(1).to_numpy()
-    spike = (vib > VIB_SPIKE_RATIO * baseline) & (vib > VIB_SPIKE_FLOOR_MS2)
+    spike = airborne & (vib > VIB_SPIKE_RATIO * baseline) & (vib > VIB_SPIKE_FLOOR_MS2)
     for s, e in find_runs(spike, t, VIB_SPIKE_MIN_DURATION_S):
         events.append(event(flight_id, "vibration_spike", t, s, e, np.nanmax(vib[s : e + 1]), "m/s²"))
 
@@ -269,7 +291,7 @@ def detect_events(flight_id: str, tel: pd.DataFrame) -> list[dict]:
         window = int(SAG_BASELINE_S * RESAMPLE_HZ)
         baseline = v.rolling(window, center=True, min_periods=window // 4).median()
         sag = ((baseline - v) / baseline).to_numpy()
-        for s, e in find_runs(sag > SAG_THRESHOLD, t, SAG_MIN_DURATION_S):
+        for s, e in find_runs(airborne & (sag > SAG_THRESHOLD), t, SAG_MIN_DURATION_S):
             events.append(event(flight_id, "battery_sag", t, s, e, np.nanmax(sag[s : e + 1]) * 100, "%"))
 
     events.sort(key=lambda ev: ev["start_s"])

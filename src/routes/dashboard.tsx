@@ -115,7 +115,6 @@ export function Dashboard() {
       buildVibrationTrendOption(trendFlights, {
         labels: siftMode.labels,
         labelColors: siftMode.labelColors,
-        thresholdMs2: siftMode.vibrationThresholdMs2,
         selectedRange: dateRangeBounds(filters.from, filters.to),
         colors,
       }),

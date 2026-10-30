@@ -7,7 +7,6 @@ import { DEFAULT_CHART_COLORS, type ChartColors } from './chartTheme'
 export interface TrendConfig {
   labels: Record<FlightLabel, string>
   labelColors: Record<FlightLabel, string>
-  thresholdMs2: number
   /** Active date filter as epoch-ms bounds (end exclusive); shaded on the chart. */
   selectedRange?: { start: number | null; end: number | null }
   colors?: ChartColors
@@ -57,6 +56,14 @@ export function buildVibrationTrendOption(flights: Flight[], config: TrendConfig
         { xAxis: range.end ?? dated[dated.length - 1].startedAt! },
       ]
     : null
+  // Reference line: the median across the flights shown, so outliers stand out under any filter.
+  const sortedVib = dated.map((f) => f.maxVibMs2).sort((a, b) => a - b)
+  const median = sortedVib.length
+    ? sortedVib.length % 2
+      ? sortedVib[(sortedVib.length - 1) / 2]
+      : (sortedVib[sortedVib.length / 2 - 1] + sortedVib[sortedVib.length / 2]) / 2
+    : null
+
   const newest = dated.length ? dated[dated.length - 1].startedAt! : 0
   const window =
     dated.length && newest - dated[0].startedAt! > LONG_SPAN_MS ? { startValue: newest - INITIAL_WINDOW_MS } : {}
@@ -110,16 +117,16 @@ export function buildVibrationTrendOption(flights: Flight[], config: TrendConfig
       itemStyle: { color: config.labelColors[label] },
       // A log axis can't place 0; clamp to a floor well below any real reading.
       data: dated.filter((f) => f.label === label).map((f) => [f.startedAt, Math.max(f.maxVibMs2, 0.01), f.flightId]),
-      // One threshold line and one range shade are enough; attach them to the first series.
+      // One reference line and one range shade are enough; attach them to the first series.
       markArea: i === 0 && shade ? { silent: true, data: [shade] } : undefined,
       markLine:
-        i === 0
+        i === 0 && median !== null
           ? {
               silent: true,
               symbol: 'none',
-              lineStyle: { color: colors.danger, type: 'dashed' },
-              label: { formatter: `${config.thresholdMs2} m/s²`, color: colors.danger, position: 'insideEndTop' },
-              data: [{ yAxis: config.thresholdMs2 }],
+              lineStyle: { color: colors.muted, type: 'dashed' },
+              label: { formatter: `median ${median.toFixed(1)}`, color: colors.muted, position: 'insideEndTop' },
+              data: [{ yAxis: median }],
             }
           : undefined,
     })),
