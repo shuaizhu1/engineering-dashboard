@@ -11,7 +11,6 @@ A user should be able to, in about 60 seconds:
 2. Brush or click the chart to filter to that window.
 3. See which category spiked in a breakdown (Pareto) chart and click it to filter.
 4. Open a record and inspect the detail (board image with defect boxes / synced channel plots).
-5. (Stretch) Ask an LLM to suggest a root cause from the filtered data.
 
 ## Modes
 
@@ -33,13 +32,11 @@ A user should be able to, in about 60 seconds:
   - Options built in pure, unit-tested functions (e.g. `buildYieldOption(data, filters)`)
   - `dataZoom` + `brush` (`brushEnd` → date filter, `replace` history), `markArea` for the active range, `click` on Pareto bars, `sampling: 'lttb'`, `dataset.source` arrays, `aria: { enabled: true }`, shared theme via `registerTheme`
   - Charts lazy-loaded with `React.lazy` + `Suspense` skeleton
-- **D3** (optional stretch): rebuild one custom chart (e.g. Pareto) so both libraries have real code behind them.
 - **Radix UI + Tailwind** for the component layer. Wrap each primitive once in our own component (e.g. `<FilterSelect>`, `<Tip>`); app code doesn't import Radix directly.
   - Popover + Checkbox (multi-select filters), Popover (date range), ToggleGroup (pass/fail/all), Tabs (chart vs table view), Tooltip (defect badges), Dialog (mobile detail / compare mode), AlertDialog (clear filters, optional), ScrollArea (only if it works with TanStack Virtual)
 - **TanStack Virtual** for the large grid/list (5,000+ items).
 - **Data**: Parquet files queried in the browser with **DuckDB-WASM** (Sift lists WebAssembly, Parquet, DuckDB). Seed scripts prepare everything ahead of time (thumbnails as small WebP).
-- **Tests**: Vitest + React Testing Library; one Playwright end-to-end test of the demo story, including a shared deep link.
-- **AI stretch**: one Vercel serverless function in `/api` calling an LLM API; API key stays server-side.
+- **Tests**: Vitest only (with React Testing Library for components). No end-to-end tests.
 - **Hosting**: Vercel.
 
 ## Non-functional targets
@@ -70,7 +67,7 @@ ulog2csv <log>.ulg -o csv/ -m battery_status,vehicle_attitude,vehicle_local_posi
 
 ## Build order
 
-Sift mode first (exercises the performance-heavy parts), then Instrumental mode (mostly a new dataset plus the image detail view). Within each, follow the phases in the plan doc: setup and data → thin slice of the demo story → charts drive filters → detail view → scale and performance → polish → stretch. Every phase ends deployed.
+Sift mode first (exercises the performance-heavy parts), then Instrumental mode (mostly a new dataset plus the image detail view). Within each, follow the phases in the plan doc: setup and data → thin slice of the demo story → charts drive filters → detail view → scale and performance → polish. Every phase ends deployed.
 
 ## README (for reviewers)
 
