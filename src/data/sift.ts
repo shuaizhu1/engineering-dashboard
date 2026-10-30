@@ -37,6 +37,7 @@ export async function loadSiftData(): Promise<SiftData> {
         label,
         epoch_ms(started_at)::DOUBLE AS startedAt,
         duration_s           AS durationS,
+        airborne_s           AS airborneS,
         sw_version           AS swVersion,
         hardware,
         max_vib_ms2          AS maxVibMs2,

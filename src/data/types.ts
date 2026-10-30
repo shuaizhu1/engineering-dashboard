@@ -10,6 +10,8 @@ export interface Flight {
   /** Epoch milliseconds (UTC); null when the log has no GPS time. */
   startedAt: number | null
   durationS: number
+  /** Time PX4's land detector reported the vehicle in the air. */
+  airborneS: number
   swVersion: string | null
   hardware: string | null
   maxVibMs2: number

@@ -20,6 +20,7 @@ function flight(flightId: string, label: Flight['label'], startedAt: string | nu
     label,
     startedAt: startedAt === null ? null : Date.parse(startedAt),
     durationS: 60,
+    airborneS: 60,
     swVersion: null,
     hardware: null,
     maxVibMs2: 1,
