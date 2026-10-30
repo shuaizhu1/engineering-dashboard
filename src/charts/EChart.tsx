@@ -2,17 +2,19 @@ import type { EChartsCoreOption, ECharts } from 'echarts/core'
 import { useEffect, useRef, type CSSProperties } from 'react'
 import { echarts } from './echarts'
 
-export type EChartEventHandlers = Record<string, (params: unknown) => void>
+export type EChartEventHandlers = Record<string, (params: unknown, chart: ECharts) => void>
 
 interface EChartProps {
   option: EChartsCoreOption
   onEvents?: EChartEventHandlers
+  /** Runs after every `setOption`, e.g. to re-enable a brush cursor. Pass a stable function. */
+  onAfterSetOption?: (chart: ECharts) => void
   className?: string
   style?: CSSProperties
 }
 
 /** Thin React wrapper around an ECharts canvas instance. Pass a memoized `option` and `onEvents`. */
-export default function EChart({ option, onEvents, className, style }: EChartProps) {
+export default function EChart({ option, onEvents, onAfterSetOption, className, style }: EChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<ECharts | null>(null)
 
@@ -30,16 +32,19 @@ export default function EChart({ option, onEvents, className, style }: EChartPro
   }, [])
 
   useEffect(() => {
-    chartRef.current?.setOption(option, { notMerge: true })
-  }, [option])
+    const chart = chartRef.current
+    if (!chart) return
+    chart.setOption(option, { notMerge: true })
+    onAfterSetOption?.(chart)
+  }, [option, onAfterSetOption])
 
   useEffect(() => {
     const chart = chartRef.current
     if (!chart || !onEvents) return
-    const entries = Object.entries(onEvents)
-    for (const [name, handler] of entries) chart.on(name, handler)
+    const bound = Object.entries(onEvents).map(([name, handler]) => [name, (params: unknown) => handler(params, chart)] as const)
+    for (const [name, handler] of bound) chart.on(name, handler)
     return () => {
-      for (const [name, handler] of entries) chart.off(name, handler)
+      for (const [name, handler] of bound) chart.off(name, handler)
     }
   }, [onEvents])
 

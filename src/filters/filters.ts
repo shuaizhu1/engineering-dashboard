@@ -76,13 +76,38 @@ export function hasActiveFilters(filters: Filters): boolean {
   return filters.labels.length > 0 || filters.eventTypes.length > 0 || filters.from !== null || filters.to !== null
 }
 
+/** Add or remove one value, keeping the canonical order of `order`. */
+export function toggleValue<T extends string>(selected: readonly T[], value: T, order: readonly T[]): T[] {
+  const next = new Set(selected)
+  if (next.has(value)) next.delete(value)
+  else next.add(value)
+  return order.filter((item) => next.has(item))
+}
+
+function toUtcDay(time: number): string {
+  return new Date(time).toISOString().slice(0, 10)
+}
+
+/** Whole UTC days covering a time span, e.g. from a brushed chart range. */
+export function dateRangeFromTimes(startMs: number, endMs: number): Pick<Filters, 'from' | 'to'> {
+  const [lo, hi] = startMs <= endMs ? [startMs, endMs] : [endMs, startMs]
+  return { from: toUtcDay(lo), to: toUtcDay(hi) }
+}
+
+/** Epoch-ms bounds of a date filter: `start` inclusive, `end` exclusive (the day after `to`). */
+export function dateRangeBounds(from: string | null, to: string | null): { start: number | null; end: number | null } {
+  return {
+    start: from ? Date.parse(`${from}T00:00:00Z`) : null,
+    end: to ? Date.parse(`${to}T00:00:00Z`) + DAY_MS : null,
+  }
+}
+
 function inDateRange(startedAt: number | null, from: string | null, to: string | null): boolean {
   if (!from && !to) return true
   // A flight without GPS time can't be placed in a date range.
   if (startedAt === null) return false
-  if (from && startedAt < Date.parse(`${from}T00:00:00Z`)) return false
-  if (to && startedAt >= Date.parse(`${to}T00:00:00Z`) + DAY_MS) return false
-  return true
+  const { start, end } = dateRangeBounds(from, to)
+  return (start === null || startedAt >= start) && (end === null || startedAt < end)
 }
 
 /** Flights matching the filters. With event types selected, a flight needs at least one such event. */

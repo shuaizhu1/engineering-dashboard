@@ -2,6 +2,7 @@
 import { BarChart, LineChart, ScatterChart } from 'echarts/charts'
 import {
   AriaComponent,
+  BrushComponent,
   DataZoomComponent,
   DatasetComponent,
   GridComponent,
@@ -18,6 +19,7 @@ echarts.use([
   LineChart,
   ScatterChart,
   AriaComponent,
+  BrushComponent,
   DataZoomComponent,
   DatasetComponent,
   GridComponent,

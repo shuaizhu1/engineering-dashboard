@@ -3,11 +3,14 @@ import type { Flight, FlightEvent } from '../data/types'
 import {
   EMPTY_FILTERS,
   applyFilters,
+  dateRangeBounds,
+  dateRangeFromTimes,
   filterEvents,
   filterFlights,
   hasActiveFilters,
   parseFilters,
   serializeFilters,
+  toggleValue,
   type Filters,
 } from './filters'
 
@@ -152,5 +155,46 @@ describe('filterEvents', () => {
   it('narrows to the selected event types', () => {
     const result = filterEvents(events, flights, { ...EMPTY_FILTERS, eventTypes: ['vibration_spike'] })
     expect(result.map((e) => e.flightId)).toEqual(['c'])
+  })
+})
+
+describe('toggleValue', () => {
+  const order = ['a', 'b', 'c'] as const
+
+  it('adds a missing value in canonical order', () => {
+    expect(toggleValue(['c'], 'a', order)).toEqual(['a', 'c'])
+  })
+
+  it('removes a present value', () => {
+    expect(toggleValue(['a', 'c'], 'c', order)).toEqual(['a'])
+  })
+})
+
+describe('dateRangeFromTimes', () => {
+  it('covers whole UTC days', () => {
+    expect(dateRangeFromTimes(Date.parse('2026-10-01T23:00:00Z'), Date.parse('2026-10-03T00:30:00Z'))).toEqual({
+      from: '2026-10-01',
+      to: '2026-10-03',
+    })
+  })
+
+  it('accepts a reversed span', () => {
+    expect(dateRangeFromTimes(Date.parse('2026-10-05T00:00:00Z'), Date.parse('2026-10-02T00:00:00Z'))).toEqual({
+      from: '2026-10-02',
+      to: '2026-10-05',
+    })
+  })
+})
+
+describe('dateRangeBounds', () => {
+  it('ends at the start of the day after `to`', () => {
+    expect(dateRangeBounds('2026-10-01', '2026-10-01')).toEqual({
+      start: Date.parse('2026-10-01T00:00:00Z'),
+      end: Date.parse('2026-10-02T00:00:00Z'),
+    })
+  })
+
+  it('leaves open ends as null', () => {
+    expect(dateRangeBounds(null, null)).toEqual({ start: null, end: null })
   })
 })
