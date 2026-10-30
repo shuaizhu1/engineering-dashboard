@@ -1,22 +1,20 @@
-import { useRouteLoaderData, type LoaderFunctionArgs } from 'react-router'
-import { loadSiftData, type SiftData } from '../data/sift'
-import { addStressFlights, parseStressCount } from '../data/stress'
+import { useRouteLoaderData } from 'react-router'
+import { loadLineData, type LineData } from '../data/boards'
 
 export const ROOT_ROUTE_ID = 'root'
 
 /** User Timing mark set when the dashboard data is ready; Lighthouse and DevTools report it. */
-export const DATA_READY_MARK = 'sift-data-ready'
+export const DATA_READY_MARK = 'line-data-ready'
 
-export async function rootLoader({ request }: LoaderFunctionArgs): Promise<SiftData> {
-  const data = await loadSiftData()
-  const stressed = addStressFlights(data, parseStressCount(new URL(request.url).searchParams))
+export async function rootLoader(): Promise<LineData> {
+  const data = await loadLineData()
   performance.mark(DATA_READY_MARK)
-  return stressed
+  return data
 }
 
-export function useSiftData(): SiftData {
-  const data = useRouteLoaderData<SiftData>(ROOT_ROUTE_ID)
-  if (!data) throw new Error('useSiftData must be used under the root route')
+export function useLineData(): LineData {
+  const data = useRouteLoaderData<LineData>(ROOT_ROUTE_ID)
+  if (!data) throw new Error('useLineData must be used under the root route')
   return data
 }
 

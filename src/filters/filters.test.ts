@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import type { Flight, FlightEvent } from '../data/types'
+import type { Defect, Unit } from '../data/types'
 import {
   EMPTY_FILTERS,
   applyFilters,
   dateRangeBounds,
   dateRangeFromTimes,
-  filterEvents,
-  filterFlights,
+  filterDefects,
+  filterUnits,
   hasActiveFilters,
   parseFilters,
   serializeFilters,
@@ -14,33 +14,22 @@ import {
   type Filters,
 } from './filters'
 
-function flight(flightId: string, label: Flight['label'], startedAt: string | null): Flight {
-  return {
-    flightId,
-    label,
-    startedAt: startedAt === null ? null : Date.parse(startedAt),
-    durationS: 60,
-    airborneS: 60,
-    swVersion: null,
-    hardware: null,
-    maxVibMs2: 1,
-    minBatteryV: null,
-    eventCount: 0,
-  }
+function unit(serial: string, line: Unit['line'], station: Unit['station'], result: Unit['result'], inspectedAt: string): Unit {
+  return { serial, line, station, inspectedAt: Date.parse(inspectedAt), result, defectCount: 0, imageId: serial }
 }
 
-function event(flightId: string, type: FlightEvent['type'], startS = 0): FlightEvent {
-  return { eventId: `${flightId}-${type}-${startS}`, flightId, type, startS, endS: startS + 1, peak: 1, unit: 'm/s²' }
+function defect(serial: string, type: Defect['type']): Defect {
+  return { serial, type, x1: 0, y1: 0, x2: 10, y2: 10 }
 }
 
-const flights = [
-  flight('a', 'vibration', '2026-10-01T10:00:00Z'),
-  flight('b', 'good', '2026-10-15T23:59:00Z'),
-  flight('c', 'component-failure', '2026-10-16T00:00:00Z'),
-  flight('d', 'good', null),
+const units = [
+  unit('a', 'L1', 'AOI-1', 'fail', '2026-10-01T10:00:00Z'),
+  unit('b', 'L2', 'AOI-2', 'pass', '2026-10-15T23:59:00Z'),
+  unit('c', 'L2', 'AOI-1', 'fail', '2026-10-16T00:00:00Z'),
+  unit('d', 'L3', 'AOI-2', 'pass', '2026-10-20T08:00:00Z'),
 ]
 
-const events = [event('a', 'vibration_high'), event('a', 'battery_sag', 5), event('c', 'vibration_spike')]
+const defects = [defect('a', 'open'), defect('a', 'short'), defect('c', 'spur')]
 
 describe('parseFilters', () => {
   it('returns empty filters for an empty query string', () => {
@@ -48,19 +37,23 @@ describe('parseFilters', () => {
   })
 
   it('reads lists and dates', () => {
-    const filters = parseFilters(new URLSearchParams('label=good,vibration&event=battery_sag&from=2026-10-01&to=2026-10-15'))
+    const filters = parseFilters(
+      new URLSearchParams('line=L3,L1&station=AOI-2&result=fail&defect=short&from=2026-10-01&to=2026-10-15'),
+    )
     expect(filters).toEqual<Filters>({
-      labels: ['vibration', 'good'],
-      eventTypes: ['battery_sag'],
+      lines: ['L1', 'L3'],
+      stations: ['AOI-2'],
+      results: ['fail'],
+      defectTypes: ['short'],
       from: '2026-10-01',
       to: '2026-10-15',
     })
   })
 
   it('drops unknown and repeated values', () => {
-    const filters = parseFilters(new URLSearchParams('label=good,bogus,good&event=nope'))
-    expect(filters.labels).toEqual(['good'])
-    expect(filters.eventTypes).toEqual([])
+    const filters = parseFilters(new URLSearchParams('line=L2,L9,L2&defect=nope'))
+    expect(filters.lines).toEqual(['L2'])
+    expect(filters.defectTypes).toEqual([])
   })
 
   it('ignores malformed and impossible dates', () => {
@@ -81,15 +74,17 @@ describe('serializeFilters', () => {
   })
 
   it('writes values in canonical order', () => {
-    const params = serializeFilters({ ...EMPTY_FILTERS, labels: ['good', 'vibration'], to: '2026-10-31' })
-    expect(params.toString()).toBe('label=vibration%2Cgood&to=2026-10-31')
+    const params = serializeFilters({ ...EMPTY_FILTERS, defectTypes: ['spur', 'open'], to: '2026-10-31' })
+    expect(params.toString()).toBe('defect=open%2Cspur&to=2026-10-31')
   })
 
   it('round-trips through parseFilters', () => {
     const filters: Filters = {
-      labels: ['component-failure'],
-      eventTypes: ['vibration_high', 'vibration_spike'],
-      from: '2026-07-01',
+      lines: ['L2'],
+      stations: ['AOI-1', 'AOI-2'],
+      results: ['pass'],
+      defectTypes: ['mousebite', 'pin-hole'],
+      from: '2026-10-01',
       to: '2026-10-31',
     }
     expect(parseFilters(serializeFilters(filters))).toEqual(filters)
@@ -98,15 +93,15 @@ describe('serializeFilters', () => {
 
 describe('applyFilters', () => {
   it('replaces filter keys and keeps other parameters', () => {
-    const params = new URLSearchParams('mode=sift&label=good&from=2026-01-01')
-    const next = applyFilters(params, { ...EMPTY_FILTERS, eventTypes: ['battery_sag'] })
-    expect(next.toString()).toBe('mode=sift&event=battery_sag')
+    const params = new URLSearchParams('view=table&line=L1&from=2026-01-01')
+    const next = applyFilters(params, { ...EMPTY_FILTERS, defectTypes: ['short'] })
+    expect(next.toString()).toBe('view=table&defect=short')
   })
 
   it('does not modify the input', () => {
-    const params = new URLSearchParams('label=good')
+    const params = new URLSearchParams('line=L1')
     applyFilters(params, EMPTY_FILTERS)
-    expect(params.toString()).toBe('label=good')
+    expect(params.toString()).toBe('line=L1')
   })
 })
 
@@ -114,48 +109,46 @@ describe('hasActiveFilters', () => {
   it('is false only for empty filters', () => {
     expect(hasActiveFilters(EMPTY_FILTERS)).toBe(false)
     expect(hasActiveFilters({ ...EMPTY_FILTERS, to: '2026-10-01' })).toBe(true)
+    expect(hasActiveFilters({ ...EMPTY_FILTERS, stations: ['AOI-1'] })).toBe(true)
   })
 })
 
-describe('filterFlights', () => {
-  const ids = (filters: Partial<Filters>) =>
-    filterFlights(flights, events, { ...EMPTY_FILTERS, ...filters }).map((f) => f.flightId)
+describe('filterUnits', () => {
+  const serials = (filters: Partial<Filters>) =>
+    filterUnits(units, defects, { ...EMPTY_FILTERS, ...filters }).map((u) => u.serial)
 
-  it('returns every flight with no filters', () => {
-    expect(ids({})).toEqual(['a', 'b', 'c', 'd'])
+  it('returns every board with no filters', () => {
+    expect(serials({})).toEqual(['a', 'b', 'c', 'd'])
   })
 
-  it('filters by label', () => {
-    expect(ids({ labels: ['good'] })).toEqual(['b', 'd'])
+  it('filters by line, station and result', () => {
+    expect(serials({ lines: ['L2'] })).toEqual(['b', 'c'])
+    expect(serials({ stations: ['AOI-2'] })).toEqual(['b', 'd'])
+    expect(serials({ results: ['fail'] })).toEqual(['a', 'c'])
   })
 
-  it('keeps flights with at least one event of a selected type', () => {
-    expect(ids({ eventTypes: ['battery_sag', 'vibration_spike'] })).toEqual(['a', 'c'])
+  it('keeps boards with at least one defect of a selected type', () => {
+    expect(serials({ defectTypes: ['short', 'spur'] })).toEqual(['a', 'c'])
   })
 
   it('treats the date range as inclusive whole UTC days', () => {
-    expect(ids({ from: '2026-10-15', to: '2026-10-15' })).toEqual(['b'])
-    expect(ids({ from: '2026-10-16' })).toEqual(['c'])
-  })
-
-  it('excludes flights without a start time when a date range is set', () => {
-    expect(ids({ to: '2026-12-31' })).not.toContain('d')
+    expect(serials({ from: '2026-10-15', to: '2026-10-15' })).toEqual(['b'])
+    expect(serials({ from: '2026-10-16' })).toEqual(['c', 'd'])
   })
 
   it('combines filters', () => {
-    expect(ids({ labels: ['vibration', 'good'], eventTypes: ['vibration_high'], to: '2026-10-10' })).toEqual(['a'])
+    expect(serials({ lines: ['L1', 'L2'], defectTypes: ['open', 'spur'], to: '2026-10-10' })).toEqual(['a'])
   })
 })
 
-describe('filterEvents', () => {
-  it('keeps events of the given flights', () => {
-    const result = filterEvents(events, [flights[0]], EMPTY_FILTERS)
-    expect(result.map((e) => e.type)).toEqual(['vibration_high', 'battery_sag'])
+describe('filterDefects', () => {
+  it('keeps defects of the given boards', () => {
+    expect(filterDefects(defects, [units[0]], EMPTY_FILTERS).map((d) => d.type)).toEqual(['open', 'short'])
   })
 
-  it('narrows to the selected event types', () => {
-    const result = filterEvents(events, flights, { ...EMPTY_FILTERS, eventTypes: ['vibration_spike'] })
-    expect(result.map((e) => e.flightId)).toEqual(['c'])
+  it('narrows to the selected defect types', () => {
+    const result = filterDefects(defects, units, { ...EMPTY_FILTERS, defectTypes: ['spur'] })
+    expect(result.map((d) => d.serial)).toEqual(['c'])
   })
 })
 

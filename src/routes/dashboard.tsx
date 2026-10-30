@@ -1,27 +1,27 @@
 import type { ECharts } from 'echarts/core'
-import { Suspense, lazy, useEffect, useMemo, type ReactNode } from 'react'
+import { Suspense, lazy, useMemo, type ReactNode } from 'react'
 import type { EChartEventHandlers } from '../charts/EChart'
-import { TREND_BRUSH_ID, buildParetoOption, buildVibrationTrendOption } from '../charts/dashboardOptions'
+import { TREND_BRUSH_ID, buildParetoOption, buildYieldOption } from '../charts/dashboardOptions'
 import { DateRangeFilter } from '../components/DateRangeFilter'
 import { FilterSelect } from '../components/FilterSelect'
 import { ViewTabs } from '../components/ViewTabs'
-import { EVENT_TYPES, FLIGHT_LABELS, type EventType } from '../data/types'
-import { eventTypePareto } from '../filters/aggregate'
+import { appConfig } from '../config'
+import { DEFECT_TYPES, LINES, RESULTS, STATIONS, type DefectType } from '../data/types'
+import { dailyYield, defectTypePareto, overallYield } from '../filters/aggregate'
 import {
   EMPTY_FILTERS,
   dateRangeBounds,
   dateRangeFromTimes,
-  filterEvents,
-  filterFlights,
+  filterDefects,
+  filterUnits,
   hasActiveFilters,
   toggleValue,
 } from '../filters/filters'
 import { useChartTheme } from '../hooks/useChartTheme'
 import { useFilters } from '../hooks/useFilters'
-import { siftMode } from '../modes/sift'
-import { ParetoTable, TrendTable } from './chart-tables'
-import { FlightGrid } from './flight-grid'
-import { useSiftData } from './root-data'
+import { BoardGrid } from './board-grid'
+import { ParetoTable, YieldTable } from './chart-tables'
+import { useLineData } from './root-data'
 
 const EChart = lazy(() => import('../charts/EChart'))
 
@@ -77,59 +77,47 @@ function ChartCard({ title, hint, action, table, children }: ChartCardProps) {
 }
 
 export function Dashboard() {
-  const { flights, events, syntheticCount } = useSiftData()
+  const { units, defects } = useLineData()
   const [filters, setFilters] = useFilters()
   const { theme: chartTheme, colors } = useChartTheme()
 
-  // Load DuckDB-WASM and the telemetry view while the user looks at the dashboard,
-  // so opening a flight doesn't wait for the WebAssembly download.
-  useEffect(() => {
-    const warmUp = () => void import('../data/telemetry').then((m) => m.warmUpTelemetry()).catch(() => {})
-    if ('requestIdleCallback' in window) {
-      const id = requestIdleCallback(warmUp, { timeout: 3000 })
-      return () => cancelIdleCallback(id)
-    }
-    const id = setTimeout(warmUp, 1000)
-    return () => clearTimeout(id)
-  }, [])
-
-  const matchingFlights = useMemo(() => filterFlights(flights, events, filters), [flights, events, filters])
-  const matchingEvents = useMemo(
-    () => filterEvents(events, matchingFlights, filters),
-    [events, matchingFlights, filters],
+  const matchingUnits = useMemo(() => filterUnits(units, defects, filters), [units, defects, filters])
+  const matchingDefects = useMemo(
+    () => filterDefects(defects, matchingUnits, filters),
+    [defects, matchingUnits, filters],
   )
+  // Filtering by result or defect type pins yield at 0% or 100%, so it isn't shown then.
+  const showYield = filters.results.length === 0 && filters.defectTypes.length === 0
+  const matchingYield = showYield ? overallYield(matchingUnits) : null
 
-  // Each chart ignores the filter it controls, so it keeps showing what else can be selected:
-  // the trend chart shows every date (the selection is shaded), the Pareto every event type.
-  const trendFlights = useMemo(
-    () => filterFlights(flights, events, { ...filters, from: null, to: null }),
-    [flights, events, filters],
+  // Each chart ignores the filters it controls or that would make it meaningless, so it keeps
+  // showing what else can be selected. The yield chart shows every date (the selection is shaded)
+  // and ignores result and defect type, which would pin yield at 0% or 100%. The Pareto shows every
+  // defect type.
+  const trendUnits = useMemo(
+    () => filterUnits(units, defects, { ...filters, from: null, to: null, results: [], defectTypes: [] }),
+    [units, defects, filters],
   )
-  const paretoEvents = useMemo(() => {
-    const withoutTypes = { ...filters, eventTypes: [] }
-    return filterEvents(events, filterFlights(flights, events, withoutTypes), withoutTypes)
-  }, [flights, events, filters])
+  const paretoDefects = useMemo(() => {
+    const withoutTypes = { ...filters, defectTypes: [] }
+    return filterDefects(defects, filterUnits(units, defects, withoutTypes), withoutTypes)
+  }, [units, defects, filters])
 
+  const yieldRows = useMemo(() => dailyYield(trendUnits), [trendUnits])
   const trendOption = useMemo(
-    () =>
-      buildVibrationTrendOption(trendFlights, {
-        labels: siftMode.labels,
-        labelColors: siftMode.labelColors,
-        selectedRange: dateRangeBounds(filters.from, filters.to),
-        colors,
-      }),
-    [trendFlights, filters.from, filters.to, colors],
+    () => buildYieldOption(yieldRows, { selectedRange: dateRangeBounds(filters.from, filters.to), colors }),
+    [yieldRows, filters.from, filters.to, colors],
   )
-  const paretoRows = useMemo(() => eventTypePareto(paretoEvents, EVENT_TYPES), [paretoEvents])
+  const paretoRows = useMemo(() => defectTypePareto(paretoDefects, DEFECT_TYPES), [paretoDefects])
   const paretoOption = useMemo(
     () =>
       buildParetoOption(paretoRows, {
-        names: siftMode.eventTypes,
-        noun: 'events',
-        selected: filters.eventTypes,
+        names: appConfig.defectTypes,
+        noun: 'defects',
+        selected: filters.defectTypes,
         colors,
       }),
-    [paretoRows, filters.eventTypes, colors],
+    [paretoRows, filters.defectTypes, colors],
   )
 
   const trendEvents = useMemo<EChartEventHandlers>(
@@ -144,14 +132,14 @@ export function Dashboard() {
     }),
     [filters, setFilters],
   )
-  const toggleEventType = (type: EventType) =>
-    setFilters({ ...filters, eventTypes: toggleValue(filters.eventTypes, type, EVENT_TYPES) })
+  const toggleDefectType = (type: DefectType) =>
+    setFilters({ ...filters, defectTypes: toggleValue(filters.defectTypes, type, DEFECT_TYPES) })
   const paretoClickEvents = useMemo<EChartEventHandlers>(
     () => ({
       click: (params) => {
         const { seriesType, data } = params as { seriesType?: string; data?: unknown[] }
         if (seriesType !== 'bar' || !data) return
-        setFilters({ ...filters, eventTypes: toggleValue(filters.eventTypes, data[0] as EventType, EVENT_TYPES) })
+        setFilters({ ...filters, defectTypes: toggleValue(filters.defectTypes, data[0] as DefectType, DEFECT_TYPES) })
       },
     }),
     [filters, setFilters],
@@ -159,36 +147,44 @@ export function Dashboard() {
 
   return (
     <div className="space-y-4">
-      <title>{`${siftMode.title} · Engineering Data Explorer`}</title>
+      <title>{appConfig.title}</title>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-xl font-semibold">{siftMode.title}</h1>
+        <h1 className="text-xl font-semibold">Inspection results</h1>
         <p className="text-sm text-muted" aria-live="polite">
-          {matchingFlights.length} of {flights.length} {siftMode.record.plural} · {matchingEvents.length} events
+          {matchingUnits.length.toLocaleString()} of {units.length.toLocaleString()} {appConfig.record.plural}
+          {matchingYield !== null && ` · ${matchingYield.toFixed(1)}% yield`} · {matchingDefects.length.toLocaleString()}{' '}
+          defects
         </p>
       </div>
 
-      {syntheticCount > 0 && (
-        <p role="note" className="rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-sm">
-          Stress test: {syntheticCount.toLocaleString()} synthetic flights cloned from{' '}
-          {(flights.length - syntheticCount).toLocaleString()} real ones. Remove <code>stress</code> from the URL and
-          reload for real data only.
-        </p>
-      )}
-
       <div role="group" aria-label="Filters" className="flex flex-wrap items-center gap-2">
         <FilterSelect
-          label="Label"
-          options={FLIGHT_LABELS}
-          names={siftMode.labels}
-          selected={filters.labels}
-          onChange={(labels) => setFilters({ ...filters, labels })}
+          label="Line"
+          options={LINES}
+          names={appConfig.lines}
+          selected={filters.lines}
+          onChange={(lines) => setFilters({ ...filters, lines })}
         />
         <FilterSelect
-          label="Event"
-          options={EVENT_TYPES}
-          names={siftMode.eventTypes}
-          selected={filters.eventTypes}
-          onChange={(eventTypes) => setFilters({ ...filters, eventTypes })}
+          label="Station"
+          options={STATIONS}
+          names={appConfig.stations}
+          selected={filters.stations}
+          onChange={(stations) => setFilters({ ...filters, stations })}
+        />
+        <FilterSelect
+          label="Result"
+          options={RESULTS}
+          names={appConfig.results}
+          selected={filters.results}
+          onChange={(results) => setFilters({ ...filters, results })}
+        />
+        <FilterSelect
+          label="Defect"
+          options={DEFECT_TYPES}
+          names={appConfig.defectTypes}
+          selected={filters.defectTypes}
+          onChange={(defectTypes) => setFilters({ ...filters, defectTypes })}
         />
         <DateRangeFilter
           label="Date"
@@ -210,9 +206,9 @@ export function Dashboard() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard
-          title="Max vibration per flight"
+          title="First-pass yield by day"
           hint="Drag to select dates"
-          table={<TrendTable flights={trendFlights} />}
+          table={<YieldTable rows={yieldRows} />}
           action={
             (filters.from || filters.to) && (
               <button
@@ -234,14 +230,22 @@ export function Dashboard() {
           />
         </ChartCard>
         <ChartCard
-          title="Events by type"
+          title="Defects by type"
           hint="Click a bar to filter"
-          table={<ParetoTable rows={paretoRows} selected={filters.eventTypes} onToggle={toggleEventType} />}
+          table={
+            <ParetoTable
+              rows={paretoRows}
+              names={appConfig.defectTypes}
+              category="Defect type"
+              selected={filters.defectTypes}
+              onToggle={toggleDefectType}
+            />
+          }
           action={
-            filters.eventTypes.length > 0 && (
+            filters.defectTypes.length > 0 && (
               <button
                 type="button"
-                onClick={() => setFilters({ ...filters, eventTypes: [] })}
+                onClick={() => setFilters({ ...filters, defectTypes: [] })}
                 className="text-sm text-accent hover:underline"
               >
                 Clear types
@@ -253,7 +257,7 @@ export function Dashboard() {
         </ChartCard>
       </div>
 
-      <FlightGrid flights={matchingFlights} total={flights.length} />
+      <BoardGrid units={matchingUnits} total={units.length} />
     </div>
   )
 }

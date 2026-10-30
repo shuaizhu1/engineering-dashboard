@@ -1,25 +1,43 @@
 import {
-  EVENT_TYPES,
-  FLIGHT_LABELS,
-  type EventType,
-  type Flight,
-  type FlightEvent,
-  type FlightLabel,
+  DEFECT_TYPES,
+  LINES,
+  RESULTS,
+  STATIONS,
+  type Defect,
+  type DefectType,
+  type Line,
+  type Result,
+  type Station,
+  type Unit,
 } from '../data/types'
 
 /** Dashboard filters. Empty lists and null dates mean "no restriction". */
 export interface Filters {
-  labels: FlightLabel[]
-  eventTypes: EventType[]
+  lines: Line[]
+  stations: Station[]
+  results: Result[]
+  defectTypes: DefectType[]
   /** Inclusive start date, `YYYY-MM-DD` (UTC). */
   from: string | null
   /** Inclusive end date, `YYYY-MM-DD` (UTC). */
   to: string | null
 }
 
-export const EMPTY_FILTERS: Filters = { labels: [], eventTypes: [], from: null, to: null }
+export const EMPTY_FILTERS: Filters = { lines: [], stations: [], results: [], defectTypes: [], from: null, to: null }
 
-const PARAM = { labels: 'label', eventTypes: 'event', from: 'from', to: 'to' } as const
+const PARAM = {
+  lines: 'line',
+  stations: 'station',
+  results: 'result',
+  defectTypes: 'defect',
+  from: 'from',
+  to: 'to',
+} as const
+
+/** The list filters with their allowed values, in canonical order. */
+const LISTS = { lines: LINES, stations: STATIONS, results: RESULTS, defectTypes: DEFECT_TYPES } as const
+type ListKey = keyof typeof LISTS
+const LIST_KEYS = Object.keys(LISTS) as ListKey[]
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -43,8 +61,10 @@ export function parseFilters(params: URLSearchParams): Filters {
   let to = parseDate(params.get(PARAM.to))
   if (from && to && from > to) [from, to] = [to, from]
   return {
-    labels: parseList(params.get(PARAM.labels), FLIGHT_LABELS),
-    eventTypes: parseList(params.get(PARAM.eventTypes), EVENT_TYPES),
+    lines: parseList(params.get(PARAM.lines), LINES),
+    stations: parseList(params.get(PARAM.stations), STATIONS),
+    results: parseList(params.get(PARAM.results), RESULTS),
+    defectTypes: parseList(params.get(PARAM.defectTypes), DEFECT_TYPES),
     from,
     to,
   }
@@ -53,18 +73,16 @@ export function parseFilters(params: URLSearchParams): Filters {
 /** Write filters to a query string, leaving out empty values so default URLs stay clean. */
 export function serializeFilters(filters: Filters): URLSearchParams {
   const params = new URLSearchParams()
-  if (filters.labels.length) {
-    params.set(PARAM.labels, FLIGHT_LABELS.filter((l) => filters.labels.includes(l)).join(','))
-  }
-  if (filters.eventTypes.length) {
-    params.set(PARAM.eventTypes, EVENT_TYPES.filter((t) => filters.eventTypes.includes(t)).join(','))
+  for (const key of LIST_KEYS) {
+    const selected: readonly string[] = filters[key]
+    if (selected.length) params.set(PARAM[key], LISTS[key].filter((v) => selected.includes(v)).join(','))
   }
   if (filters.from) params.set(PARAM.from, filters.from)
   if (filters.to) params.set(PARAM.to, filters.to)
   return params
 }
 
-/** Replace the filter keys in `params`, keeping any other query parameters (e.g. `mode`). */
+/** Replace the filter keys in `params`, keeping any other query parameters. */
 export function applyFilters(params: URLSearchParams, filters: Filters): URLSearchParams {
   const next = new URLSearchParams(params)
   for (const key of Object.values(PARAM)) next.delete(key)
@@ -73,7 +91,7 @@ export function applyFilters(params: URLSearchParams, filters: Filters): URLSear
 }
 
 export function hasActiveFilters(filters: Filters): boolean {
-  return filters.labels.length > 0 || filters.eventTypes.length > 0 || filters.from !== null || filters.to !== null
+  return LIST_KEYS.some((key) => filters[key].length > 0) || filters.from !== null || filters.to !== null
 }
 
 /** Add or remove one value, keeping the canonical order of `order`. */
@@ -102,33 +120,34 @@ export function dateRangeBounds(from: string | null, to: string | null): { start
   }
 }
 
-function inDateRange(startedAt: number | null, from: string | null, to: string | null): boolean {
-  if (!from && !to) return true
-  // A flight without GPS time can't be placed in a date range.
-  if (startedAt === null) return false
-  const { start, end } = dateRangeBounds(from, to)
-  return (start === null || startedAt >= start) && (end === null || startedAt < end)
+function inDateRange(time: number, start: number | null, end: number | null): boolean {
+  return (start === null || time >= start) && (end === null || time < end)
 }
 
-/** Flights matching the filters. With event types selected, a flight needs at least one such event. */
-export function filterFlights(flights: Flight[], events: FlightEvent[], filters: Filters): Flight[] {
-  const labels = new Set(filters.labels)
-  let withEventType: Set<string> | null = null
-  if (filters.eventTypes.length) {
-    const types = new Set(filters.eventTypes)
-    withEventType = new Set(events.filter((e) => types.has(e.type)).map((e) => e.flightId))
+/** Boards matching the filters. With defect types selected, a board needs at least one such defect. */
+export function filterUnits(units: Unit[], defects: Defect[], filters: Filters): Unit[] {
+  const lines = new Set(filters.lines)
+  const stations = new Set(filters.stations)
+  const results = new Set(filters.results)
+  const { start, end } = dateRangeBounds(filters.from, filters.to)
+  let withDefectType: Set<string> | null = null
+  if (filters.defectTypes.length) {
+    const types = new Set(filters.defectTypes)
+    withDefectType = new Set(defects.filter((d) => types.has(d.type)).map((d) => d.serial))
   }
-  return flights.filter(
-    (f) =>
-      (labels.size === 0 || labels.has(f.label)) &&
-      (withEventType === null || withEventType.has(f.flightId)) &&
-      inDateRange(f.startedAt, filters.from, filters.to),
+  return units.filter(
+    (u) =>
+      (lines.size === 0 || lines.has(u.line)) &&
+      (stations.size === 0 || stations.has(u.station)) &&
+      (results.size === 0 || results.has(u.result)) &&
+      (withDefectType === null || withDefectType.has(u.serial)) &&
+      inDateRange(u.inspectedAt, start, end),
   )
 }
 
-/** Events that belong to the given flights and match the selected event types. */
-export function filterEvents(events: FlightEvent[], flights: Flight[], filters: Filters): FlightEvent[] {
-  const flightIds = new Set(flights.map((f) => f.flightId))
-  const types = new Set(filters.eventTypes)
-  return events.filter((e) => flightIds.has(e.flightId) && (types.size === 0 || types.has(e.type)))
+/** Defects on the given boards that match the selected defect types. */
+export function filterDefects(defects: Defect[], units: Unit[], filters: Filters): Defect[] {
+  const serials = new Set(units.map((u) => u.serial))
+  const types = new Set(filters.defectTypes)
+  return defects.filter((d) => serials.has(d.serial) && (types.size === 0 || types.has(d.type)))
 }

@@ -1,64 +1,39 @@
-export const FLIGHT_LABELS = ['vibration', 'component-failure', 'sensor-error', 'good'] as const
-export const EVENT_TYPES = ['vibration_high', 'vibration_spike', 'battery_sag'] as const
+export const LINES = ['L1', 'L2', 'L3'] as const
+export const STATIONS = ['AOI-1', 'AOI-2'] as const
+export const RESULTS = ['pass', 'fail'] as const
+/** DeepPCB defect classes, in the dataset's class-ID order. */
+export const DEFECT_TYPES = ['open', 'short', 'mousebite', 'spur', 'copper', 'pin-hole'] as const
 
-export type FlightLabel = (typeof FLIGHT_LABELS)[number]
-export type EventType = (typeof EVENT_TYPES)[number]
+export type Line = (typeof LINES)[number]
+export type Station = (typeof STATIONS)[number]
+export type Result = (typeof RESULTS)[number]
+export type DefectType = (typeof DEFECT_TYPES)[number]
 
-export interface Flight {
-  flightId: string
-  label: FlightLabel
-  /** Epoch milliseconds (UTC); null when the log has no GPS time. */
-  startedAt: number | null
-  durationS: number
-  /** Time PX4's land detector reported the vehicle in the air. */
-  airborneS: number
-  swVersion: string | null
-  hardware: string | null
-  maxVibMs2: number
-  minBatteryV: number | null
-  eventCount: number
+/** One inspected board. */
+export interface Unit {
+  serial: string
+  line: Line
+  station: Station
+  /** Epoch milliseconds (UTC). */
+  inspectedAt: number
+  result: Result
+  defectCount: number
+  /** Board image file name without extension, under `images/` and `thumbs/`. */
+  imageId: string
 }
 
-export interface FlightEvent {
-  eventId: string
-  flightId: string
-  type: EventType
-  startS: number
-  endS: number
-  peak: number
-  unit: string
+/** One defect box on a failed board, in the board image's pixel coordinates (640 × 640). */
+export interface Defect {
+  serial: string
+  type: DefectType
+  x1: number
+  y1: number
+  x2: number
+  y2: number
 }
 
-export interface SiftData {
-  flights: Flight[]
-  events: FlightEvent[]
-  /** Synthetic flights added for scale testing (`?stress=N`); 0 for real data only. */
-  syntheticCount: number
-}
-
-export const TELEMETRY_CHANNELS = [
-  'battery_v',
-  'battery_a',
-  'battery_pct',
-  'roll_deg',
-  'pitch_deg',
-  'yaw_deg',
-  'height_m',
-  'speed_ms',
-  'accel_x',
-  'accel_y',
-  'accel_z',
-  'vib_ms2',
-  'motor_0',
-  'motor_1',
-  'motor_2',
-  'motor_3',
-] as const
-
-export type TelemetryChannel = (typeof TELEMETRY_CHANNELS)[number]
-
-/** One flight's 10 Hz telemetry as columns; NaN where a channel has no data. */
-export interface FlightTelemetry {
-  tS: Float32Array
-  channels: Record<TelemetryChannel, Float32Array>
+export interface LineData {
+  /** Newest first. */
+  units: Unit[]
+  defects: Defect[]
 }

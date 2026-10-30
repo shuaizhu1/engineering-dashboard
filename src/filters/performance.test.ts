@@ -1,57 +1,48 @@
 import { describe, expect, it } from 'vitest'
-import { buildParetoOption, buildVibrationTrendOption } from '../charts/dashboardOptions'
-import { addStressFlights } from '../data/stress'
-import { EVENT_TYPES, FLIGHT_LABELS, type Flight, type FlightEvent, type SiftData } from '../data/types'
-import { siftMode } from '../modes/sift'
-import { eventTypePareto } from './aggregate'
-import { EMPTY_FILTERS, dateRangeBounds, filterEvents, filterFlights, type Filters } from './filters'
+import { buildParetoOption, buildYieldOption } from '../charts/dashboardOptions'
+import { appConfig } from '../config'
+import { DEFECT_TYPES, LINES, STATIONS, type Defect, type LineData, type Unit } from '../data/types'
+import { dailyYield, defectTypePareto, overallYield } from './aggregate'
+import { EMPTY_FILTERS, dateRangeBounds, filterDefects, filterUnits, type Filters } from './filters'
 
-/** 20 base flights with 5 events each, scaled to `total` flights like `?stress=N`. */
-function dataset(total: number): SiftData {
-  const flights: Flight[] = []
-  const events: FlightEvent[] = []
-  for (let i = 0; i < 20; i++) {
-    const flightId = `flight-${i}`
-    flights.push({
-      flightId,
-      label: FLIGHT_LABELS[i % FLIGHT_LABELS.length],
-      startedAt: Date.UTC(2026, 0, 1 + i * 10),
-      durationS: 300,
-      airborneS: 280,
-      swVersion: null,
-      hardware: null,
-      maxVibMs2: 1 + i,
-      minBatteryV: 14,
-      eventCount: 5,
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** `total` boards over 30 days; every 10th fails with 6 defects. */
+function dataset(total: number): LineData {
+  const units: Unit[] = []
+  const defects: Defect[] = []
+  const start = Date.UTC(2026, 9, 1)
+  for (let i = 0; i < total; i++) {
+    const serial = `SN${100001 + i}`
+    const failed = i % 10 === 0
+    units.push({
+      serial,
+      line: LINES[i % LINES.length],
+      station: STATIONS[i % STATIONS.length],
+      inspectedAt: start + Math.floor((i / total) * 30 * DAY_MS),
+      result: failed ? 'fail' : 'pass',
+      defectCount: failed ? 6 : 0,
+      imageId: serial,
     })
-    for (let j = 0; j < 5; j++) {
-      events.push({
-        eventId: `${flightId}-${j}`,
-        flightId,
-        type: EVENT_TYPES[(i + j) % EVENT_TYPES.length],
-        startS: j * 10,
-        endS: j * 10 + 2,
-        peak: 1,
-        unit: 'm/s²',
-      })
+    if (failed) {
+      for (let j = 0; j < 6; j++) {
+        defects.push({ serial, type: DEFECT_TYPES[(i + j) % DEFECT_TYPES.length], x1: 0, y1: 0, x2: 10, y2: 10 })
+      }
     }
   }
-  return addStressFlights({ flights, events, syntheticCount: 0 }, total - flights.length)
+  return { units: units.reverse(), defects }
 }
 
 /** Everything the dashboard recomputes when a filter changes. */
-function dashboardUpdate(data: SiftData, filters: Filters) {
-  const matching = filterFlights(data.flights, data.events, filters)
-  filterEvents(data.events, matching, filters)
-  const trendFlights = filterFlights(data.flights, data.events, { ...filters, from: null, to: null })
-  const withoutTypes = { ...filters, eventTypes: [] }
-  const paretoEvents = filterEvents(data.events, filterFlights(data.flights, data.events, withoutTypes), withoutTypes)
-  buildVibrationTrendOption(trendFlights, {
-    labels: siftMode.labels,
-    labelColors: siftMode.labelColors,
-    selectedRange: dateRangeBounds(filters.from, filters.to),
-  })
-  buildParetoOption(eventTypePareto(paretoEvents, EVENT_TYPES), { names: siftMode.eventTypes, noun: 'events' })
+function dashboardUpdate({ units, defects }: LineData, filters: Filters) {
+  const matching = filterUnits(units, defects, filters)
+  filterDefects(defects, matching, filters)
+  overallYield(matching)
+  const trendUnits = filterUnits(units, defects, { ...filters, from: null, to: null, results: [], defectTypes: [] })
+  const withoutTypes = { ...filters, defectTypes: [] }
+  const paretoDefects = filterDefects(defects, filterUnits(units, defects, withoutTypes), withoutTypes)
+  buildYieldOption(dailyYield(trendUnits), { selectedRange: dateRangeBounds(filters.from, filters.to) })
+  buildParetoOption(defectTypePareto(paretoDefects, DEFECT_TYPES), { names: appConfig.defectTypes, noun: 'defects' })
 }
 
 function medianMs(run: () => void, repeats = 7): number {
@@ -68,18 +59,19 @@ describe('filter performance', () => {
   const data = dataset(10_000)
   const filters: Filters = {
     ...EMPTY_FILTERS,
-    labels: ['vibration', 'sensor-error'],
-    eventTypes: ['vibration_spike'],
-    from: '2026-03-01',
-    to: '2026-09-30',
+    lines: ['L1', 'L2'],
+    stations: ['AOI-2'],
+    defectTypes: ['short'],
+    from: '2026-10-05',
+    to: '2026-10-20',
   }
 
-  it('recomputes the dashboard for 10,000 flights and 50,000 events within the 100 ms budget', () => {
-    expect(data.flights).toHaveLength(10_000)
-    expect(data.events).toHaveLength(50_000)
+  it('recomputes the dashboard for 10,000 boards and 6,000 defects within the 100 ms budget', () => {
+    expect(data.units).toHaveLength(10_000)
+    expect(data.defects).toHaveLength(6_000)
     // Budget is the < 100 ms filter-update target; this covers the data work, not React or canvas rendering.
     const ms = medianMs(() => dashboardUpdate(data, filters))
-    console.info(`dashboard update, 10k flights: ${ms.toFixed(1)} ms (median of 7)`)
+    console.info(`dashboard update, 10k boards: ${ms.toFixed(1)} ms (median of 7)`)
     expect(ms).toBeLessThan(100)
   })
 })

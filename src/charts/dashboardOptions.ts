@@ -1,12 +1,8 @@
 import type { EChartsCoreOption } from 'echarts/core'
-import type { Flight, FlightLabel } from '../data/types'
-import { shortFlightId } from '../data/stress'
-import type { ParetoRow } from '../filters/aggregate'
+import type { DailyYield, ParetoRow } from '../filters/aggregate'
 import { DEFAULT_CHART_COLORS, type ChartColors } from './chartTheme'
 
-export interface TrendConfig {
-  labels: Record<FlightLabel, string>
-  labelColors: Record<FlightLabel, string>
+export interface YieldConfig {
   /** Active date filter as epoch-ms bounds (end exclusive); shaded on the chart. */
   selectedRange?: { start: number | null; end: number | null }
   colors?: ChartColors
@@ -29,45 +25,34 @@ export function emptyMessage(text: string, color: string) {
   }
 }
 
-/** Show the most recent year first when the data spans much longer; the slider reaches the rest. */
-const INITIAL_WINDOW_MS = 365 * DAY_MS
-const LONG_SPAN_MS = 2 * INITIAL_WINDOW_MS
+/** Lowest y-axis value: 5 points below the worst day, on a multiple of 5, so dips aren't flattened. */
+export function yieldAxisMin(rows: DailyYield[]): number {
+  const values = rows.flatMap((r) => (r.yieldPct === null ? [] : [r.yieldPct]))
+  if (values.length === 0) return 0
+  return Math.max(0, Math.floor((Math.min(...values) - 5) / 5) * 5)
+}
 
 /**
- * Max vibration per flight against its start time, one scatter series per label.
+ * Daily first-pass yield as a line, with the overall yield as a dashed reference.
  * Dragging across the chart (brush) selects a date range; the wheel zooms the time axis.
- * The y axis is logarithmic: vibration spans orders of magnitude, and a linear axis lets one
- * crash-like flight flatten all the others.
+ * Points sit at the middle of each UTC day so a brush over a point covers that day.
  */
-export function buildVibrationTrendOption(flights: Flight[], config: TrendConfig): EChartsCoreOption {
+export function buildYieldOption(rows: DailyYield[], config: YieldConfig = {}): EChartsCoreOption {
   const colors = config.colors ?? DEFAULT_CHART_COLORS
-  const dated = flights.filter((f) => f.startedAt !== null).sort((a, b) => a.startedAt! - b.startedAt!)
-  const labels = (Object.keys(config.labels) as FlightLabel[]).filter((l) => dated.some((f) => f.label === l))
-  const undated = flights.length - dated.length
+  const withBoards = rows.filter((r) => r.yieldPct !== null)
+  const inspected = rows.reduce((sum, r) => sum + r.inspected, 0)
+  const passed = rows.reduce((sum, r) => sum + r.passed, 0)
+  const overall = inspected ? (passed / inspected) * 100 : null
+  const worst = withBoards.reduce<DailyYield | null>((min, r) => (min === null || r.yieldPct! < min.yieldPct! ? r : min), null)
 
   const range = config.selectedRange
-  const hasRange = range !== undefined && (range.start !== null || range.end !== null) && dated.length > 0
+  const hasRange = range !== undefined && (range.start !== null || range.end !== null) && rows.length > 0
   const shade = hasRange
     ? [
-        {
-          xAxis: range.start ?? dated[0].startedAt!,
-          itemStyle: { color: colors.accent, opacity: 0.12 },
-        },
-        { xAxis: range.end ?? dated[dated.length - 1].startedAt! },
+        { xAxis: range.start ?? rows[0].day, itemStyle: { color: colors.accent, opacity: 0.12 } },
+        { xAxis: range.end ?? rows[rows.length - 1].day + DAY_MS },
       ]
     : null
-  // Reference line: the median across the flights shown, so outliers stand out under any filter.
-  const sortedVib = dated.map((f) => f.maxVibMs2).sort((a, b) => a - b)
-  const median = sortedVib.length
-    ? sortedVib.length % 2
-      ? sortedVib[(sortedVib.length - 1) / 2]
-      : (sortedVib[sortedVib.length / 2 - 1] + sortedVib[sortedVib.length / 2]) / 2
-    : null
-
-  const newest = dated.length ? dated[dated.length - 1].startedAt! : 0
-  const window =
-    dated.length && newest - dated[0].startedAt! > LONG_SPAN_MS ? { startValue: newest - INITIAL_WINDOW_MS } : {}
-
   const rangeText = hasRange
     ? ` Selected range ${range.start === null ? 'start' : DATE_ONLY(range.start)} to ${range.end === null ? 'end' : DATE_ONLY(range.end - 1)}.`
     : ''
@@ -77,11 +62,12 @@ export function buildVibrationTrendOption(flights: Flight[], config: TrendConfig
     aria: {
       enabled: true,
       description:
-        `Maximum vibration for ${dated.length} flights by start date` +
-        (undated ? `; ${undated} flights without a start time are not shown.` : '.') +
-        rangeText,
+        withBoards.length === 0
+          ? 'No boards match these filters.'
+          : `First-pass yield by day for ${inspected} boards over ${rows.length} days, ${overall!.toFixed(1)}% overall. ` +
+            `Lowest day ${DATE_ONLY(worst!.day)} at ${worst!.yieldPct!.toFixed(1)}%.${rangeText}`,
     },
-    grid: { left: 56, right: 24, top: 56, bottom: 64 },
+    grid: { left: 56, right: 24, top: 32, bottom: 64 },
     brush: {
       id: TREND_BRUSH_ID,
       xAxisIndex: 0,
@@ -91,51 +77,55 @@ export function buildVibrationTrendOption(flights: Flight[], config: TrendConfig
       brushStyle: { color: colors.accent, opacity: 0.15, borderColor: colors.accent, borderWidth: 1 },
     },
     dataZoom: [
-      {
-        type: 'inside',
-        xAxisIndex: 0,
-        zoomOnMouseWheel: true,
-        moveOnMouseMove: false,
-        moveOnMouseWheel: false,
-        ...window,
-      },
-      { type: 'slider', xAxisIndex: 0, height: 16, bottom: 8, ...window },
+      { type: 'inside', xAxisIndex: 0, zoomOnMouseWheel: true, moveOnMouseMove: false, moveOnMouseWheel: false },
+      { type: 'slider', xAxisIndex: 0, height: 16, bottom: 8 },
     ],
-    graphic: dated.length === 0 ? [emptyMessage('No flights with a start time match these filters', colors.muted)] : [],
-    legend: { top: 0 },
+    graphic: withBoards.length === 0 ? [emptyMessage('No boards match these filters', colors.muted)] : [],
     tooltip: {
-      trigger: 'item',
-      formatter: (p: { data: [number, number, string]; seriesName: string }) =>
-        `${shortFlightId(p.data[2])} · ${p.seriesName}<br/>${new Date(p.data[0]).toISOString().slice(0, 10)} · ${p.data[1].toFixed(1)} m/s²`,
+      trigger: 'axis',
+      formatter: (params: { data: [number, number | null, number, number] }[]) => {
+        const [day, pct, total, ok] = params[0].data
+        return `${DATE_ONLY(day)}<br/>${pct === null ? 'No boards' : `${pct.toFixed(1)}% yield · ${ok} of ${total} passed`}`
+      },
+    },
+    dataset: {
+      dimensions: ['day', 'yieldPct', 'inspected', 'passed'],
+      source: rows.map((r) => [
+        r.day + DAY_MS / 2,
+        r.yieldPct === null ? null : Math.round(r.yieldPct * 10) / 10,
+        r.inspected,
+        r.passed,
+      ]),
     },
     xAxis: { type: 'time', splitLine: { show: false } },
-    yAxis: { type: 'log', name: 'Max vibration (m/s², log scale)', logBase: 10 },
-    series: labels.map((label, i) => ({
-      type: 'scatter',
-      name: config.labels[label],
-      symbolSize: 10,
-      itemStyle: { color: config.labelColors[label] },
-      // A log axis can't place 0; clamp to a floor well below any real reading.
-      data: dated.filter((f) => f.label === label).map((f) => [f.startedAt, Math.max(f.maxVibMs2, 0.01), f.flightId]),
-      // One reference line and one range shade are enough; attach them to the first series.
-      markArea: i === 0 && shade ? { silent: true, data: [shade] } : undefined,
-      markLine:
-        i === 0 && median !== null
-          ? {
-              silent: true,
-              symbol: 'none',
-              lineStyle: { color: colors.muted, type: 'dashed' },
-              label: { formatter: `median ${median.toFixed(1)}`, color: colors.muted, position: 'insideEndTop' },
-              data: [{ yAxis: median }],
-            }
-          : undefined,
-    })),
+    yAxis: { type: 'value', name: 'First-pass yield (%)', min: yieldAxisMin(rows), max: 100 },
+    series: [
+      {
+        type: 'line',
+        name: 'Yield',
+        encode: { x: 'day', y: 'yieldPct' },
+        sampling: 'lttb',
+        symbolSize: 6,
+        itemStyle: { color: colors.accent },
+        markArea: shade ? { silent: true, data: [shade] } : undefined,
+        markLine:
+          overall !== null
+            ? {
+                silent: true,
+                symbol: 'none',
+                lineStyle: { color: colors.muted, type: 'dashed' },
+                label: { formatter: `overall ${overall.toFixed(1)}%`, color: colors.muted, position: 'insideStartBottom' },
+                data: [{ yAxis: Math.round(overall * 10) / 10 }],
+              }
+            : undefined,
+      },
+    ],
   }
 }
 
 export interface ParetoConfig<T extends string> {
   names: Record<T, string>
-  /** Accessible noun for what is counted, e.g. "events". */
+  /** Accessible noun for what is counted, e.g. "defects". */
   noun: string
   /** Keys in the active filter; other bars are dimmed. Empty means nothing is filtered. */
   selected?: readonly T[]
@@ -158,14 +148,15 @@ export function buildParetoOption<T extends string>(rows: ParetoRow<T>[], config
   return {
     animation: false,
     aria: { enabled: true, description: `${total} ${config.noun} by type: ${summary}.${selectedText}` },
-    grid: { left: 48, right: 48, top: 40, bottom: 40 },
+    grid: { left: 48, right: 48, top: 40, bottom: 48 },
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
     graphic: total === 0 ? [emptyMessage(`No ${config.noun} match these filters`, colors.muted)] : [],
     dataset: {
       dimensions: ['key', 'name', 'count', 'cumulativePct'],
       source: rows.map((r) => [r.key, config.names[r.key], r.count, Math.round(r.cumulativePct * 10) / 10]),
     },
-    xAxis: { type: 'category', axisLabel: { interval: 0 } },
+    // Long names wrap onto a second line instead of running into their neighbors.
+    xAxis: { type: 'category', axisLabel: { interval: 0, width: 72, overflow: 'break' } },
     yAxis: [
       { type: 'value', name: 'Count', minInterval: 1 },
       { type: 'value', name: 'Cumulative %', min: 0, max: 100, splitLine: { show: false } },

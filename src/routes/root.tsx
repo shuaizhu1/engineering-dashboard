@@ -43,7 +43,7 @@ export function RootLayout() {
       <header className="border-b border-border bg-surface">
         <div className="mx-auto max-w-6xl px-4 py-3">
           <Link to="/" className="font-semibold text-text">
-            Engineering Data Explorer
+            Line Inspector
           </Link>
         </div>
       </header>
@@ -56,7 +56,7 @@ export function RootLayout() {
 
 export function RootLoading() {
   return (
-    <div className={`${shell} space-y-4`} role="status" aria-label="Loading flight data">
+    <div className={`${shell} space-y-4`} role="status" aria-label="Loading inspection data">
       <div className="h-7 w-48 animate-pulse rounded bg-border/50" />
       <div className="h-8 w-80 animate-pulse rounded bg-border/40" />
       <div className="grid gap-4 lg:grid-cols-2">
@@ -71,13 +71,13 @@ export function RootError() {
   const error = useRouteError()
   return (
     <div className={shell}>
-      <title>Error · Engineering Data Explorer</title>
-      <ErrorPanel title="The flight data couldn't be loaded" error={error} />
+      <title>Error · Line Inspector</title>
+      <ErrorPanel title="The inspection data couldn't be loaded" error={error} />
     </div>
   )
 }
 
-/** Shared error message with a retry; used by the root and flight routes. */
+/** Shared error message with a retry; used by the root route and detail pages. */
 export function ErrorPanel({ title, error }: { title: string; error: unknown }) {
   const detail = isRouteErrorResponse(error)
     ? `${error.status} ${error.statusText}`

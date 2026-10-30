@@ -1,5 +1,5 @@
 // Tree-shaken ECharts: register only the pieces the app uses.
-import { BarChart, LineChart, ScatterChart } from 'echarts/charts'
+import { BarChart, LineChart } from 'echarts/charts'
 import {
   AriaComponent,
   BrushComponent,
@@ -7,7 +7,6 @@ import {
   DatasetComponent,
   GraphicComponent,
   GridComponent,
-  LegendComponent,
   MarkAreaComponent,
   MarkLineComponent,
   TooltipComponent,
@@ -19,14 +18,12 @@ import { registerChartThemes } from './chartTheme'
 echarts.use([
   BarChart,
   LineChart,
-  ScatterChart,
   AriaComponent,
   BrushComponent,
   DataZoomComponent,
   DatasetComponent,
   GraphicComponent,
   GridComponent,
-  LegendComponent,
   MarkAreaComponent,
   MarkLineComponent,
   TooltipComponent,

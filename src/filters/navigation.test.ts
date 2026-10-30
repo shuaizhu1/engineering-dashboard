@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { focusWindow, neighbors } from './navigation'
+import { neighbors } from './navigation'
 
 describe('neighbors', () => {
   const items = ['a', 'b', 'c']
@@ -15,19 +15,5 @@ describe('neighbors', () => {
 
   it('reports -1 and no neighbors for an item outside the list', () => {
     expect(neighbors(items, (i) => i === 'z')).toEqual({ index: -1, prev: null, next: null })
-  })
-})
-
-describe('focusWindow', () => {
-  it('pads short events by the minimum on both sides', () => {
-    expect(focusWindow({ startS: 50, endS: 52 }, 0, 300)).toEqual([40, 62])
-  })
-
-  it('pads long events by half their length', () => {
-    expect(focusWindow({ startS: 100, endS: 160 }, 0, 300)).toEqual([70, 190])
-  })
-
-  it('clamps to the flight time range', () => {
-    expect(focusWindow({ startS: 2, endS: 295 }, 0, 300)).toEqual([0, 300])
   })
 })

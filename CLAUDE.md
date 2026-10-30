@@ -2,7 +2,7 @@
 
 Portfolio project for a frontend job application at **Instrumental** (AI for electronics manufacturing): exploring PCB inspection results from an assembly line over time.
 
-Split on 2026-10-30 from the shared "Engineering Data Explorer". The Sift project (PX4 flight telemetry) now lives in `~/Documents/sift-telemetry`; there is no mode switching. `src/` and `public/data/sift/` still hold the Sift app as a starting point and get replaced as the Instrumental views are built.
+Split on 2026-10-30 from the shared "Engineering Data Explorer". The Sift project (PX4 flight telemetry) now lives in `~/Documents/sift-telemetry`; there is no mode switching. Display names and colors live in `src/config.ts`. `docs/performance.md` still has the Sift-era measurements until the performance phase is redone.
 
 Full requirements and phased plan (Claude Docs): https://claude.ai/code/artifact/77023540-0de2-437c-ab54-f4e5cc36ee27
 

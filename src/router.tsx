@@ -15,7 +15,6 @@ export const router = createBrowserRouter([
     ErrorBoundary: RootError,
     children: [
       { index: true, Component: Dashboard },
-      { path: 'flights/:flightId', lazy: () => import('./routes/flight') },
       { path: '*', Component: NotFound },
     ],
   },

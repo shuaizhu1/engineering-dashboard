@@ -8,7 +8,7 @@ export interface View {
 }
 
 interface ViewTabsProps {
-  /** Accessible name for the tab list, e.g. "Max vibration per flight view". */
+  /** Accessible name for the tab list, e.g. "Defects by type view". */
   label: string
   views: View[]
   /** Rendered on the same row as the tab list, before it. */

@@ -1,4 +1,4 @@
-import type { FlightEvent } from '../data/types'
+import type { Defect, DefectType, Unit } from '../data/types'
 
 export interface ParetoRow<T extends string> {
   key: T
@@ -28,9 +28,52 @@ export function paretoCounts<T extends string>(values: T[], keys: readonly T[]):
   })
 }
 
-export function eventTypePareto(events: FlightEvent[], types: readonly FlightEvent['type'][]) {
+export function defectTypePareto(defects: Defect[], types: readonly DefectType[]) {
   return paretoCounts(
-    events.map((e) => e.type),
+    defects.map((d) => d.type),
     types,
   )
+}
+
+export interface DailyYield {
+  /** Start of the UTC day, epoch ms. */
+  day: number
+  inspected: number
+  passed: number
+  /** First-pass yield, 0–100; null on a day with no boards. */
+  yieldPct: number | null
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * First-pass yield per UTC day, oldest first, with every day between the first and last board
+ * present so gaps show as gaps rather than being bridged.
+ */
+export function dailyYield(units: Unit[]): DailyYield[] {
+  if (units.length === 0) return []
+  const byDay = new Map<number, { inspected: number; passed: number }>()
+  let first = Infinity
+  let last = -Infinity
+  for (const u of units) {
+    const day = Math.floor(u.inspectedAt / DAY_MS) * DAY_MS
+    first = Math.min(first, day)
+    last = Math.max(last, day)
+    const counts = byDay.get(day) ?? { inspected: 0, passed: 0 }
+    counts.inspected++
+    if (u.result === 'pass') counts.passed++
+    byDay.set(day, counts)
+  }
+  const rows: DailyYield[] = []
+  for (let day = first; day <= last; day += DAY_MS) {
+    const { inspected, passed } = byDay.get(day) ?? { inspected: 0, passed: 0 }
+    rows.push({ day, inspected, passed, yieldPct: inspected ? (passed / inspected) * 100 : null })
+  }
+  return rows
+}
+
+/** Overall first-pass yield, 0–100; null with no boards. */
+export function overallYield(units: Unit[]): number | null {
+  if (units.length === 0) return null
+  return (units.filter((u) => u.result === 'pass').length / units.length) * 100
 }

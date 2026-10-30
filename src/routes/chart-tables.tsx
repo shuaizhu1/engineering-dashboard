@@ -1,13 +1,7 @@
-import { Link, useLocation } from 'react-router'
-import { shortFlightId } from '../data/stress'
-import type { EventType, Flight } from '../data/types'
-import type { ParetoRow } from '../filters/aggregate'
-import { siftMode } from '../modes/sift'
+import type { DailyYield, ParetoRow } from '../filters/aggregate'
 
 // Table views of the dashboard charts: the same data as text, for screen readers, keyboard users
 // and anyone who wants exact values.
-
-const TABLE_ROW_LIMIT = 100
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' })
 
@@ -15,64 +9,57 @@ const wrapper = 'max-h-[280px] overflow-auto rounded border border-border'
 const th = 'sticky top-0 bg-surface px-3 py-1.5 text-left font-medium text-muted'
 const td = 'px-3 py-1.5'
 
-export function TrendTable({ flights }: { flights: Flight[] }) {
-  const { search } = useLocation()
-  const dated = flights.filter((f) => f.startedAt !== null).sort((a, b) => b.startedAt! - a.startedAt!)
-  const shown = dated.slice(0, TABLE_ROW_LIMIT)
-
-  if (dated.length === 0) {
-    return <p className="flex h-[280px] items-center justify-center text-sm text-muted">No flights with a start time match these filters.</p>
+/** Daily yield, newest first. */
+export function YieldTable({ rows }: { rows: DailyYield[] }) {
+  if (rows.length === 0) {
+    return <p className="flex h-[280px] items-center justify-center text-sm text-muted">No boards match these filters.</p>
   }
 
   return (
     <div className={wrapper}>
       <table className="w-full text-sm">
-        <caption className="sr-only">Maximum vibration per flight, newest first</caption>
+        <caption className="sr-only">First-pass yield by day, newest first</caption>
         <thead>
           <tr className="border-b border-border">
-            <th scope="col" className={th}>Started (UTC)</th>
-            <th scope="col" className={th}>Flight</th>
-            <th scope="col" className={th}>Label</th>
-            <th scope="col" className={`${th} text-right`}>Max vibration (m/s²)</th>
+            <th scope="col" className={th}>Day (UTC)</th>
+            <th scope="col" className={`${th} text-right`}>Inspected</th>
+            <th scope="col" className={`${th} text-right`}>Passed</th>
+            <th scope="col" className={`${th} text-right`}>Yield</th>
           </tr>
         </thead>
         <tbody>
-          {shown.map((f) => (
-            <tr key={f.flightId} className="border-b border-border last:border-0">
-              <td className={td}>{dateFormat.format(f.startedAt!)}</td>
-              <td className={`${td} font-mono`}>
-                <Link to={{ pathname: `/flights/${f.flightId}`, search }}>{shortFlightId(f.flightId)}</Link>
-              </td>
-              <td className={td}>{siftMode.labels[f.label]}</td>
-              <td className={`${td} text-right tabular-nums`}>{f.maxVibMs2.toFixed(1)}</td>
+          {[...rows].reverse().map((r) => (
+            <tr key={r.day} className="border-b border-border last:border-0">
+              <td className={td}>{dateFormat.format(r.day)}</td>
+              <td className={`${td} text-right tabular-nums`}>{r.inspected}</td>
+              <td className={`${td} text-right tabular-nums`}>{r.passed}</td>
+              <td className={`${td} text-right tabular-nums`}>{r.yieldPct === null ? '—' : `${r.yieldPct.toFixed(1)}%`}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      {dated.length > TABLE_ROW_LIMIT && (
-        <p className="px-3 py-1.5 text-xs text-muted">
-          Showing the newest {TABLE_ROW_LIMIT} of {dated.length.toLocaleString()} flights.
-        </p>
-      )}
     </div>
   )
 }
 
-interface ParetoTableProps {
-  rows: ParetoRow<EventType>[]
-  selected: readonly EventType[]
-  onToggle: (type: EventType) => void
+interface ParetoTableProps<T extends string> {
+  rows: ParetoRow<T>[]
+  names: Record<T, string>
+  /** Column heading for the category, e.g. "Defect type". */
+  category: string
+  selected: readonly T[]
+  onToggle: (key: T) => void
 }
 
-/** Event counts by type; each row's button toggles that type in the filter, like clicking its bar. */
-export function ParetoTable({ rows, selected, onToggle }: ParetoTableProps) {
+/** Counts by category; each row's button toggles that category in the filter, like clicking its bar. */
+export function ParetoTable<T extends string>({ rows, names, category, selected, onToggle }: ParetoTableProps<T>) {
   return (
     <div className={wrapper}>
       <table className="w-full text-sm">
-        <caption className="sr-only">Events by type, most frequent first</caption>
+        <caption className="sr-only">{category} counts, most frequent first</caption>
         <thead>
           <tr className="border-b border-border">
-            <th scope="col" className={th}>Event type</th>
+            <th scope="col" className={th}>{category}</th>
             <th scope="col" className={`${th} text-right`}>Count</th>
             <th scope="col" className={`${th} text-right`}>Cumulative %</th>
             <th scope="col" className={th}>
@@ -86,7 +73,7 @@ export function ParetoTable({ rows, selected, onToggle }: ParetoTableProps) {
             return (
               <tr key={r.key} className="border-b border-border last:border-0">
                 <th scope="row" className={`${td} text-left font-normal`}>
-                  {siftMode.eventTypes[r.key]}
+                  {names[r.key]}
                 </th>
                 <td className={`${td} text-right tabular-nums`}>{r.count}</td>
                 <td className={`${td} text-right tabular-nums`}>{r.cumulativePct.toFixed(0)}%</td>
@@ -94,7 +81,7 @@ export function ParetoTable({ rows, selected, onToggle }: ParetoTableProps) {
                   <button
                     type="button"
                     aria-pressed={active}
-                    aria-label={`Filter by ${siftMode.eventTypes[r.key]}`}
+                    aria-label={`Filter by ${names[r.key]}`}
                     onClick={() => onToggle(r.key)}
                     className={`rounded border px-2 py-0.5 text-xs ${
                       active ? 'border-accent bg-accent text-accent-contrast' : 'border-border hover:border-muted'
