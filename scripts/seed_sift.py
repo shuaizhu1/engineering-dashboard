@@ -28,6 +28,14 @@ RAW_DIR = ROOT / "data" / "raw"
 OUT_DIR = ROOT / "public" / "data" / "sift"
 
 RESAMPLE_HZ = 10
+# When a log sits in several label folders, the earliest label here wins.
+LABEL_PRIORITY = ["vibration", "component-failure", "sensor-error", "good"]
+
+# Flights with less time in the air than this (bench tests, aborted takeoffs) are skipped.
+MIN_AIRBORNE_S = 60.0
+
+# Battery voltage below this means no battery sensor is connected.
+MIN_VALID_BATTERY_V = 1.0
 TOPICS = [
     "battery_status",
     "sensor_combined",
@@ -35,6 +43,7 @@ TOPICS = [
     "vehicle_local_position",
     "actuator_outputs",
     "vehicle_gps_position",
+    "vehicle_land_detected",
 ]
 
 # Vibration metric: rolling std of the accelerometer magnitude over this window.
@@ -129,10 +138,37 @@ def flight_start_utc(ulog: ULog) -> str | None:
     return dt.datetime.fromtimestamp(start_us / 1e6, dt.timezone.utc).isoformat()
 
 
+class SkipLog(Exception):
+    """A log that is readable but should not be part of the dataset."""
+
+
+def is_simulated(ulog: ULog) -> bool:
+    return ulog.msg_info_dict.get("ver_hw") == "PX4_SITL" or ulog.initial_parameters.get("SYS_HITL", 0) != 0
+
+
+def airborne_seconds(ulog: ULog) -> float | None:
+    """Time PX4's land detector reports the vehicle as not landed; None if the topic is missing."""
+    land = topic(ulog, "vehicle_land_detected")
+    if land is None or "landed" not in land:
+        return None
+    t = land["timestamp"].astype(np.int64)
+    # Each sample's state lasts until the next sample (the last one until the end of the log).
+    durations = np.diff(np.append(t, ulog.last_timestamp)) / 1e6
+    return float(durations[land["landed"] == 0].sum())
+
+
 def process(path: Path, label: str) -> tuple[dict, pd.DataFrame, list[dict]]:
     ulog = ULog(str(path), TOPICS)
     flight_id = path.stem
     t0 = ulog.start_timestamp
+
+    if is_simulated(ulog):
+        raise SkipLog("simulated (SITL/HITL)")
+    airborne_s = airborne_seconds(ulog)
+    if airborne_s is None:
+        raise SkipLog("no land detector data")
+    if airborne_s < MIN_AIRBORNE_S:
+        raise SkipLog(f"airborne {airborne_s:.0f}s, under {MIN_AIRBORNE_S:.0f}s")
 
     sc = topic(ulog, "sensor_combined")
     if sc is None:
@@ -145,6 +181,8 @@ def process(path: Path, label: str) -> tuple[dict, pd.DataFrame, list[dict]]:
     cols: dict[str, np.ndarray] = {"t_s": t_grid}
 
     bat = topic(ulog, "battery_status")
+    if bat is not None and np.nanmedian(bat["voltage_v"]) < MIN_VALID_BATTERY_V:
+        bat = None
     if bat is not None:
         tb = seconds(bat, t0)
         cols["battery_v"] = resample(tb, bat["voltage_v"], t_grid)
@@ -195,6 +233,7 @@ def process(path: Path, label: str) -> tuple[dict, pd.DataFrame, list[dict]]:
         "label": label,
         "started_at": flight_start_utc(ulog),
         "duration_s": float(t_grid[-1] - t_grid[0]),
+        "airborne_s": airborne_s,
         "sw_version": firmware_version(ulog),
         "hardware": ulog.msg_info_dict.get("ver_hw"),
         "max_vib_ms2": float(np.nanmax(telemetry["vib_ms2"])),
@@ -257,20 +296,41 @@ def main() -> None:
     parser.add_argument("--raw-dir", type=Path, default=RAW_DIR)
     args = parser.parse_args()
 
-    logs = sorted(args.raw_dir.glob("*/*.ulg"))
+    # Sort by label folder in a fixed priority so duplicates keep their most specific label.
+    priority = {name: i for i, name in enumerate(LABEL_PRIORITY)}
+    logs = sorted(args.raw_dir.glob("*/*.ulg"), key=lambda p: (priority.get(p.parent.name, len(priority)), p.stem))
     if not logs:
         raise SystemExit(f"No .ulg files under {args.raw_dir}")
 
     flights, telemetry, events = [], [], []
+    seen: set[str] = set()
+    skipped_filtered = skipped_duplicate = skipped_error = 0
     for path in logs:
         label = path.parent.name
-        flight, tel, evs = process(path, label)
-        print(f"{label:<18} {path.stem[:8]}  {flight['duration_s']:>6.0f}s  "
+        # A log can carry several error labels and land in two folders; keep the first.
+        if path.stem in seen:
+            print(f"{label:<18} {path.stem[:8]}  skipped: already seen under another label")
+            skipped_duplicate += 1
+            continue
+        try:
+            flight, tel, evs = process(path, label)
+        except SkipLog as reason:
+            print(f"{label:<18} {path.stem[:8]}  skipped: {reason}")
+            skipped_filtered += 1
+            continue
+        except Exception as error:  # noqa: BLE001 - one bad log shouldn't stop the seed
+            print(f"{label:<18} {path.stem[:8]}  skipped: {error}")
+            skipped_error += 1
+            continue
+        seen.add(path.stem)
+        print(f"{label:<18} {path.stem[:8]}  {flight['airborne_s']:>6.0f}s air  "
               f"max vib {flight['max_vib_ms2']:5.2f}  events {len(evs)}")
         flights.append(flight)
         telemetry.append(tel)
         events.extend(evs)
 
+    print(f"Kept {len(flights)} of {len(logs)} logs "
+          f"({skipped_filtered} short or simulated, {skipped_duplicate} duplicates, {skipped_error} unreadable)")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     print("Wrote:")
     flights_df = pd.DataFrame(flights)

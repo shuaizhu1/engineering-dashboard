@@ -8,11 +8,13 @@ export const siftMode = {
   labels: {
     vibration: 'Vibration',
     'component-failure': 'Component failure',
+    'sensor-error': 'Sensor error',
     good: 'Good',
   } satisfies Record<FlightLabel, string>,
   labelColors: {
     vibration: '#d1495b',
     'component-failure': '#e8a33d',
+    'sensor-error': '#7b61ff',
     good: '#2e9e6a',
   } satisfies Record<FlightLabel, string>,
   eventTypes: {

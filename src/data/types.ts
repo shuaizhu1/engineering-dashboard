@@ -1,4 +1,4 @@
-export const FLIGHT_LABELS = ['vibration', 'component-failure', 'good'] as const
+export const FLIGHT_LABELS = ['vibration', 'component-failure', 'sensor-error', 'good'] as const
 export const EVENT_TYPES = ['vibration_high', 'vibration_spike', 'battery_sag'] as const
 
 export type FlightLabel = (typeof FLIGHT_LABELS)[number]

@@ -33,7 +33,7 @@ A user should be able to, in about 60 seconds:
   - `dataZoom` + `brush` (`brushEnd` → date filter, `replace` history), `markArea` for the active range, `click` on Pareto bars, `sampling: 'lttb'`, `dataset.source` arrays, `aria: { enabled: true }`, shared theme via `registerTheme`
   - Charts lazy-loaded with `React.lazy` + `Suspense` skeleton
 - **Radix UI + Tailwind** for the component layer. Wrap each primitive once in our own component (e.g. `<FilterSelect>`, `<Tip>`); app code doesn't import Radix directly.
-  - Popover + Checkbox (multi-select filters), Popover (date range), ToggleGroup (pass/fail/all), Tabs (chart vs table view), Tooltip (defect badges), Dialog (mobile detail / compare mode), AlertDialog (clear filters, optional), ScrollArea (only if it works with TanStack Virtual)
+  - Popover + Checkbox (multi-select filters), Popover (date range), ToggleGroup (pass/fail/all), Tabs (chart vs table view), Tooltip (defect badges), Dialog (compare mode), AlertDialog (clear filters, optional), ScrollArea (only if it works with TanStack Virtual)
 - **TanStack Virtual** for the large grid/list (5,000+ items).
 - **Data**: Parquet files queried in the browser with **DuckDB-WASM** (Sift lists WebAssembly, Parquet, DuckDB). Seed scripts prepare everything ahead of time (thumbnails as small WebP).
 - **Tests**: Vitest only, unit tests for pure functions (filters, URL helpers, chart option builders). No React Testing Library, no end-to-end tests.
@@ -43,7 +43,7 @@ A user should be able to, in about 60 seconds:
 
 - First load < 2 s; filter updates < 100 ms on 5,000+ records; Lighthouse performance 90+
 - Keyboard navigation, visible focus (move focus to heading on route change), WCAG AA contrast, chart data reachable as text
-- Usable on laptop and phone; loading, empty and error states everywhere
+- Desktop browser only (laptop and larger screens); no phone layout or phone testing. Loading, empty and error states everywhere
 
 ## PX4 data pipeline (Sift mode)
 
