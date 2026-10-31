@@ -2,7 +2,7 @@
 
 Find a yield problem on a PCB assembly line and trace it to the defect, the station and the board, all in the browser.
 
-**Live demo:** https://engineering-data-explorer.vercel.app
+**Live demo:** https://pcb-yield-dashboard.vercel.app
 
 ![Demo: spot the yield dip, brush it, filter to shorts, open a failed board and compare it with the reference](docs/demo.gif)
 
