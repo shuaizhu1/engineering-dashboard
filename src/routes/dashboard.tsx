@@ -1,5 +1,5 @@
 import type { ECharts } from 'echarts/core'
-import { Suspense, lazy, useMemo, type ReactNode } from 'react'
+import { Suspense, lazy, useMemo, useState, type ReactNode } from 'react'
 import type { EChartEventHandlers } from '../charts/EChart'
 import { TREND_BRUSH_ID, buildParetoOption, buildYieldOption } from '../charts/dashboardOptions'
 import { DateRangeFilter } from '../components/DateRangeFilter'
@@ -44,14 +44,17 @@ interface ChartCardProps {
 }
 
 function ChartCard({ title, hint, action, table, children }: ChartCardProps) {
+  const [view, setView] = useState('chart')
   return (
     <section className="rounded-lg border border-border bg-surface p-4">
       <ViewTabs
         label={`${title} view`}
+        value={view}
+        onValueChange={setView}
         heading={
           <h2 className="text-sm font-semibold">
             {title}
-            {hint && <span className="ml-2 font-normal text-muted">{hint}</span>}
+            {hint && view === 'chart' && <span className="ml-2 font-normal text-muted">{hint}</span>}
           </h2>
         }
         action={action}

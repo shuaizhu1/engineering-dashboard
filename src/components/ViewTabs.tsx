@@ -15,12 +15,15 @@ interface ViewTabsProps {
   heading: ReactNode
   /** Extra controls between the heading and the tab list. */
   action?: ReactNode
+  /** The open view, for callers that need to react to it; uncontrolled when omitted. */
+  value?: string
+  onValueChange?: (value: string) => void
 }
 
 /** Our one wrapper around Radix Tabs: a small segmented switch between views of the same data. */
-export function ViewTabs({ label, views, heading, action }: ViewTabsProps) {
+export function ViewTabs({ label, views, heading, action, value, onValueChange }: ViewTabsProps) {
   return (
-    <Tabs.Root defaultValue={views[0].value}>
+    <Tabs.Root defaultValue={views[0].value} value={value} onValueChange={onValueChange}>
       <div className="mb-2 flex items-center justify-between gap-2">
         {heading}
         <div className="flex items-center gap-3">
