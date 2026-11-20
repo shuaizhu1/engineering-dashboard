@@ -1,4 +1,4 @@
-"""Build the Instrumental mode ("Line Inspector") dataset from DeepPCB board images.
+"""Build the Instrumental mode ("Manufacturing Yield Dashboard") dataset from DeepPCB board images.
 
 DeepPCB (https://github.com/tangsanli5201/DeepPCB, MIT) has 640x640 PCB image pairs: a defect-free
 template and an aligned tested image annotated with defect boxes. The images and boxes are real;

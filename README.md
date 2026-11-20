@@ -1,4 +1,4 @@
-# Line Inspector
+# Manufacturing Yield Dashboard
 
 Find a yield problem on a PCB assembly line and trace it to the defect, the station and the board, all in the browser.
 
@@ -13,7 +13,7 @@ A manufacturing or quality engineer gets thousands of automated optical inspecti
 - What kind of defect is it?
 - Is it one station or the whole line?
 
-Then they want to look at an actual board to confirm it. Spreadsheet exports and static reports make that a slow, multi-tool hunt. Line Inspector does it on one page, and every view is a shareable URL.
+Then they want to look at an actual board to confirm it. Spreadsheet exports and static reports make that a slow, multi-tool hunt. Manufacturing Yield Dashboard does it on one page, and every view is a shareable URL.
 
 ## The demo story (about 60 seconds)
 

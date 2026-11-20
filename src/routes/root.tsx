@@ -53,7 +53,7 @@ export function RootLayout() {
       <header className="border-b border-border bg-surface">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <Link to="/" className="font-semibold text-text">
-            Line Inspector
+            Manufacturing Yield Dashboard
           </Link>
           <a
             href={appConfig.repoUrl}
@@ -92,7 +92,7 @@ export function RootError() {
   const error = useRouteError()
   return (
     <div className={shell}>
-      <title>Error · Line Inspector</title>
+      <title>Error · Manufacturing Yield Dashboard</title>
       <ErrorPanel title="The inspection data couldn't be loaded" error={error} />
     </div>
   )

@@ -1,4 +1,4 @@
-# Line Inspector – Project Context
+# Manufacturing Yield Dashboard – Project Context
 
 Portfolio project for a frontend job application at **Instrumental** (AI for electronics manufacturing): exploring PCB inspection results from an assembly line over time.
 
